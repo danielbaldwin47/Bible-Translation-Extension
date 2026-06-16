@@ -46,6 +46,29 @@
     jude: 'Jude', rev: 'Revelation',
   };
 
+  // Non-Bible standard works: LDS URL slug -> full name. These have no api.bible
+  // translation (citations only). Slugs match churchofjesuschrist.org URLs (and,
+  // after space→hyphen normalization, the BYU SCI book.Abbr — except D&C, whose
+  // DB Abbr is "sec" but whose Church slug is "dc"). Only chapter-based books are
+  // listed (0-chapter front matter / facsimiles are omitted).
+  const BOFM_NAMES = {
+    '1-ne': '1 Nephi', '2-ne': '2 Nephi', jacob: 'Jacob', enos: 'Enos', jarom: 'Jarom',
+    omni: 'Omni', 'w-of-m': 'Words of Mormon', mosiah: 'Mosiah', alma: 'Alma', hel: 'Helaman',
+    '3-ne': '3 Nephi', '4-ne': '4 Nephi', morm: 'Mormon', ether: 'Ether', moro: 'Moroni',
+  };
+  const DC_NAMES = { dc: 'Doctrine & Covenants', od: 'Official Declarations' };
+  const PGP_NAMES = {
+    moses: 'Moses', abr: 'Abraham', 'js-m': 'Joseph Smith—Matthew',
+    'js-h': 'Joseph Smith—History', 'a-of-f': 'Articles of Faith',
+  };
+  const NON_BIBLE_NAMES = Object.assign({}, BOFM_NAMES, DC_NAMES, PGP_NAMES);
+
+  // Non-Bible slug -> URL collection segment.
+  const SLUG_TO_COLLECTION = {};
+  for (const s of Object.keys(BOFM_NAMES)) SLUG_TO_COLLECTION[s] = 'bofm';
+  for (const s of Object.keys(DC_NAMES)) SLUG_TO_COLLECTION[s] = 'dc-testament';
+  for (const s of Object.keys(PGP_NAMES)) SLUG_TO_COLLECTION[s] = 'pgp';
+
   function ldsToUsfm(slug) {
     return Object.prototype.hasOwnProperty.call(LDS_TO_USFM, slug) ? LDS_TO_USFM[slug] : null;
   }
@@ -54,12 +77,35 @@
     return Object.prototype.hasOwnProperty.call(LDS_TO_BIBLEAPI, slug) ? LDS_TO_BIBLEAPI[slug] : null;
   }
 
-  // Only the Bible collections (Old/New Testament) are actionable.
+  // Display name for any standard-works book (Bible or otherwise).
+  function bookFullName(slug) {
+    if (Object.prototype.hasOwnProperty.call(LDS_TO_BIBLEAPI, slug)) return LDS_TO_BIBLEAPI[slug];
+    if (Object.prototype.hasOwnProperty.call(NON_BIBLE_NAMES, slug)) return NON_BIBLE_NAMES[slug];
+    return null;
+  }
+
+  // Only the Bible collections (Old/New Testament) have translations.
   function isBibleCollection(collection) {
     return collection === 'ot' || collection === 'nt';
   }
 
-  const BOOKS = { LDS_TO_USFM, LDS_TO_BIBLEAPI, ldsToUsfm, ldsToBibleApi, isBibleCollection };
+  // All standard-works collections the citation index covers.
+  function isScriptureCollection(collection) {
+    return collection === 'ot' || collection === 'nt' ||
+      collection === 'bofm' || collection === 'dc-testament' || collection === 'pgp';
+  }
+
+  // True if (collection, slug) is a known, citation-indexed book.
+  function isKnownBook(collection, slug) {
+    if (isBibleCollection(collection)) return ldsToUsfm(slug) != null;
+    return Object.prototype.hasOwnProperty.call(NON_BIBLE_NAMES, slug) && SLUG_TO_COLLECTION[slug] === collection;
+  }
+
+  const BOOKS = {
+    LDS_TO_USFM, LDS_TO_BIBLEAPI, NON_BIBLE_NAMES, SLUG_TO_COLLECTION,
+    ldsToUsfm, ldsToBibleApi, bookFullName,
+    isBibleCollection, isScriptureCollection, isKnownBook,
+  };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = BOOKS;
   root.__BTX = Object.assign(root.__BTX || {}, { books: BOOKS });

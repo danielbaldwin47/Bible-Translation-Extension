@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Bible Translation Side-by-Side",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Compare Bible translations and see which General Conference talks, Journal of Discourses sermons, and Joseph Smith teachings cite each verse — in a side panel that blends into the Gospel Library reader.",
   "permissions": ["storage"],
   "host_permissions": [
@@ -22,9 +22,9 @@
         "src/content/detect.js",
         "src/content/panel.js",
         "src/citations/cit-data.js",
+        "src/citations/highlights.js",
         "src/citations/talk-view.js",
         "src/citations/cit-panel.js",
-        "src/citations/verse-badges.js",
         "src/content/content.js"
       ],
       "css": ["src/content/panel.css", "src/citations/citations.css"],

@@ -20,7 +20,7 @@
   top: var(--btx-top);
   right: 0;
   width: var(--btx-width);
-  max-width: 45vw;
+  max-width: 90vw;
   height: calc(100vh - var(--btx-top));
   z-index: 2147483000;          /* above page content, below most native modals */
   box-sizing: border-box;
@@ -42,6 +42,7 @@
 
 /* ---- Panel shell ---- */
 #btx-root .btx-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -49,6 +50,31 @@
   border-left: 1px solid var(--btx-border);
   box-shadow: -4px 0 18px rgba(0, 0, 0, 0.12);
 }
+
+/* ---- Drag-to-resize grip (left inner edge) ---- */
+#btx-root .btx-resize {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 7px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 5;
+  touch-action: none;
+}
+#btx-root .btx-resize::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 2px;
+  width: 1px;
+  height: 100%;
+  background: transparent;
+  transition: background 0.12s;
+}
+#btx-root .btx-resize:hover::before,
+#btx-root.btx-resizing .btx-resize::before { background: var(--btx-accent); }
+#btx-root.btx-resizing { user-select: none; }
 
 #btx-root .btx-header {
   display: flex;
@@ -226,6 +252,7 @@
     height: 60vh;
   }
   #btx-root .btx-panel { border-left: none; border-top: 1px solid var(--btx-border); }
+  #btx-root .btx-resize { display: none; }
   #btx-root .btx-tab {
     top: auto;
     bottom: 12px;

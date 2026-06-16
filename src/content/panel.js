@@ -62,18 +62,26 @@
     const body = el('div', 'btx-body');
     const footer = el('div', 'btx-footer');
 
+    // Drag-to-resize grip on the panel's left (inner) edge.
+    const resize = el('div', 'btx-resize');
+    resize.title = 'Drag to resize';
+
+    panel.appendChild(resize);
     panel.appendChild(header);
     panel.appendChild(modes);
     panel.appendChild(body);
     panel.appendChild(footer);
 
     // Collapsed tab pinned to the right edge.
-    const tab = el('button', 'btx-tab', 'Bible');
-    tab.title = 'Show comparison';
+    const tab = el('button', 'btx-tab', 'Translation & Citations');
+    tab.title = 'Show panel';
 
     rootEl.appendChild(panel);
     rootEl.appendChild(tab);
-    if (!existing) document.body.appendChild(rootEl);
+    if (!existing) {
+      rootEl.style.display = 'none'; // stay hidden until render() decides visibility
+      document.body.appendChild(rootEl);
+    }
 
     // Wire controls.
     select.addEventListener('change', () => cbs.onTranslationChange && cbs.onTranslationChange(select.value));
@@ -83,8 +91,9 @@
     tab.addEventListener('click', () => setCollapsed(false));
     modeTranslation.addEventListener('click', () => cbs.onModeChange && cbs.onModeChange('translation'));
     modeCitations.addEventListener('click', () => cbs.onModeChange && cbs.onModeChange('citations'));
+    resize.addEventListener('pointerdown', onResizeDown);
 
-    ui = { rootEl, panel, header, title, select, modes, modeTranslation, modeCitations, body, footer, tab };
+    ui = { rootEl, panel, header, title, select, modes, modeTranslation, modeCitations, body, footer, tab, resize };
     return ui;
   }
 
@@ -223,6 +232,50 @@
     return ui.body;
   }
 
+  // ---- Width: settings + drag-to-resize ----
+  function clampWidth(w) {
+    const max = Math.min(900, Math.floor(window.innerWidth * 0.9));
+    return Math.max(280, Math.min(max, Math.round(Number(w) || 0)));
+  }
+
+  function setWidth(px) {
+    ensureRoot();
+    ui.rootEl.style.setProperty('--btx-width', clampWidth(px) + 'px');
+  }
+
+  function widthFromEvent(e) {
+    return clampWidth(window.innerWidth - e.clientX);
+  }
+
+  function onResizeMove(e) {
+    setWidth(widthFromEvent(e));
+  }
+
+  function onResizeUp(e) {
+    document.removeEventListener('pointermove', onResizeMove);
+    ui.rootEl.classList.remove('btx-resizing');
+    const w = widthFromEvent(e);
+    setWidth(w);
+    cbs.onResizeEnd && cbs.onResizeEnd(w);
+  }
+
+  function onResizeDown(e) {
+    if (e.button != null && e.button !== 0) return;
+    ensureRoot();
+    ui.rootEl.classList.add('btx-resizing');
+    document.addEventListener('pointermove', onResizeMove);
+    document.addEventListener('pointerup', onResizeUp, { once: true });
+    e.preventDefault();
+  }
+
+  // Toggle translation availability: on non-Bible books only Citations exists, so
+  // hide the mode toggle and relabel the collapsed tab.
+  function setBibleMode(isBible) {
+    ensureRoot();
+    ui.modes.style.display = isBible ? '' : 'none';
+    ui.tab.textContent = isBible ? 'Translation & Citations' : 'Citations';
+  }
+
   // Switch the panel between 'translation' and 'citations'. Citations mode hides
   // the translation dropdown + copyright footer and disables verse scroll-sync.
   function setMode(mode) {
@@ -240,7 +293,7 @@
     panel: {
       ensureRoot, setHandlers, setVisible, setCollapsed, isCollapsed, setTitle,
       populateTranslations, renderLoading, renderNoKey, renderError, renderContent,
-      getRootEl, getBodyEl, setMode,
+      getRootEl, getBodyEl, setMode, setWidth, setBibleMode,
     },
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

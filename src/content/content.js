@@ -17,7 +17,6 @@
   const panel = root.__BTX.panel;
   const citPanel = root.__BTX.citPanel;
   const talkView = root.__BTX.talkView;
-  const verseBadges = root.__BTX.verseBadges;
 
   const SELECTION_KEY = 'btxSelectedTranslation';
   const MODE_KEY = 'btxPanelMode';
@@ -30,7 +29,13 @@
   let userClosed = false;
   let themeDisconnect = null;
   let currentKey = null; // dedupes repeat navigation events for the same chapter
-  let mode = 'translation'; // 'translation' | 'citations'
+  let mode = 'translation'; // user's preferred mode on Bible chapters
+  let isBibleCurrent = true; // current page has translations (OT/NT)?
+
+  // On non-Bible books there's no translation, so Citations is forced.
+  function effectiveMode() {
+    return isBibleCurrent ? mode : 'citations';
+  }
 
   function getStored(key) {
     return new Promise((resolve) => {
@@ -56,7 +61,7 @@
   }
 
   function refLabel(parsed) {
-    const name = BOOKS.ldsToBibleApi(parsed.ldsBook) || parsed.ldsBook;
+    const name = BOOKS.bookFullName(parsed.ldsBook) || parsed.ldsBook;
     return `${name} ${parsed.chapter}`;
   }
 
@@ -85,10 +90,10 @@
 
     if (!parsed) {
       panel.setVisible(false);
-      verseBadges.clear();
       currentKey = null;
       return;
     }
+    isBibleCurrent = parsed.isBible !== false;
 
     // Skip spurious events (e.g. verse-anchor hashchange) for the same chapter.
     // Mode toggles re-render directly (see renderActiveMode), bypassing this.
@@ -108,24 +113,21 @@
     // Respect the "English pages only" preference.
     if (e.actOnNonEngOnly !== false && parsed.lang !== 'eng') {
       panel.setVisible(false);
-      verseBadges.clear();
       return;
     }
 
     panel.setVisible(true);
     applyTheme();
     panel.setTitle(refLabel(parsed));
-    panel.setMode(mode);
-
-    // Per-verse citation badges show in either mode.
-    updateBadges(parsed);
+    panel.setBibleMode(isBibleCurrent);
+    panel.setMode(effectiveMode());
 
     await renderActiveMode();
   }
 
   function renderActiveMode() {
     if (!current) return undefined;
-    return mode === 'citations' ? renderCitations(current) : renderTranslation();
+    return effectiveMode() === 'citations' ? renderCitations(current) : renderTranslation();
   }
 
   async function renderTranslation() {
@@ -145,18 +147,11 @@
     await loadChapter();
   }
 
-  function updateBadges(parsed) {
-    verseBadges.update(parsed.ldsBook, parsed.chapter, (verse) => {
-      if (mode !== 'citations') { mode = 'citations'; storeMode(); panel.setMode('citations'); }
-      renderCitations(current, verse);
-    });
-  }
-
   function renderCitations(parsed, focusVerse) {
     return citPanel.render(panel.getBodyEl(), {
       slug: parsed.ldsBook,
       chapter: parsed.chapter,
-      fullName: BOOKS.ldsToBibleApi(parsed.ldsBook) || parsed.ldsBook,
+      fullName: BOOKS.bookFullName(parsed.ldsBook) || parsed.ldsBook,
       focusVerse,
       onOpenTalk: openTalk,
     });
@@ -249,27 +244,56 @@
     } catch (e) { /* ignore */ }
   }
 
+  function getSyncSettings() {
+    return new Promise((resolve) => {
+      try { chrome.storage.sync.get(C.SETTINGS_KEY, (d) => resolve((d && d[C.SETTINGS_KEY]) || {})); } catch (e) { resolve({}); }
+    });
+  }
+
+  function applyWidth(px) {
+    const w = Number(px);
+    if (Number.isFinite(w) && w > 0) panel.setWidth(w);
+  }
+
+  async function persistWidth(px) {
+    const s = await getSyncSettings();
+    s.sidebarWidth = Number(px);
+    try { chrome.storage.sync.set({ [C.SETTINGS_KEY]: s }); } catch (e) { /* ignore */ }
+  }
+
+  // True if two settings objects differ only in sidebarWidth (so a width change
+  // doesn't trigger a full translation re-render).
+  function sameExceptWidth(a, b) {
+    const ax = Object.assign({}, a || {}); delete ax.sidebarWidth;
+    const bx = Object.assign({}, b || {}); delete bx.sidebarWidth;
+    return JSON.stringify(ax) === JSON.stringify(bx);
+  }
+
   // ---- Wire up ----
   async function init() {
     panel.setHandlers({
       onTranslationChange: (id) => {
         selectedId = id;
         storeSelection(id);
-        if (mode === 'translation') loadChapter();
+        if (effectiveMode() === 'translation') loadChapter();
       },
       onRetry: () => loadChapter(),
       onGear: () => send({ type: C.MSG.OPEN_OPTIONS }),
       onClose: () => { userClosed = true; panel.setVisible(false); },
       onModeChange: (m) => {
+        if (!isBibleCurrent) return; // toggle hidden on non-Bible books
         if (m === mode) return;
         mode = m;
         storeMode();
         panel.setMode(m);
         renderActiveMode();
       },
+      onResizeEnd: (px) => persistWidth(px),
     });
 
     mode = (await getStored(MODE_KEY)) === 'citations' ? 'citations' : 'translation';
+    const initSettings = await getSyncSettings();
+    if (initSettings.sidebarWidth) applyWidth(initSettings.sidebarWidth);
 
     detect.setupNavigation(() => render());
 
@@ -277,9 +301,14 @@
       if (current && !userClosed) applyTheme();
     });
 
-    // Settings changed in options -> refresh translations and re-render.
+    // Settings changed in options -> apply width live; re-render only if a
+    // translation-affecting field changed.
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'sync' && changes[C.SETTINGS_KEY]) {
+        const nv = changes[C.SETTINGS_KEY].newValue || {};
+        const ov = changes[C.SETTINGS_KEY].oldValue || {};
+        if (nv.sidebarWidth !== ov.sidebarWidth) applyWidth(nv.sidebarWidth);
+        if (sameExceptWidth(ov, nv)) return;
         enabled = null;
         currentKey = null; // force a re-render with the new settings
         if (current) render();

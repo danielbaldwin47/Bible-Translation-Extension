@@ -26,8 +26,9 @@ const index = readJSON('index.json');
 const sources = readJSON('sources.json');
 
 console.log('Index / sources:');
-check(index.counts && index.counts.books === 66, `index covers 66 books (got ${index.counts && index.counts.books})`);
-check(index.counts.citations > 50000, `citation count is sane (${index.counts.citations})`);
+check(index.counts && index.counts.books === index.books.length, `counts.books matches books[] (${index.counts && index.counts.books} vs ${index.books.length})`);
+check(index.counts && index.counts.books >= 88, `index covers all standard works, >= 88 books (got ${index.counts && index.counts.books})`);
+check(index.counts.citations > 100000, `citation count is sane (${index.counts.citations})`);
 check(Object.keys(sources).length > 1000, `sources populated (${Object.keys(sources).length})`);
 
 console.log('Shards:');

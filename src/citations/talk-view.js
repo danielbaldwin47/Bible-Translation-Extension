@@ -10,6 +10,7 @@
   'use strict';
 
   const citData = () => root.__BTX.citData;
+  const highlights = () => root.__BTX.highlights;
 
   // Tags kept when sanitizing fetched talk HTML; everything else is unwrapped.
   const ALLOWED = new Set(['P', 'DIV', 'SPAN', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
@@ -100,6 +101,14 @@
     meta.appendChild(el('div', 'btx-talk-title', source.ti || 'Talk'));
     meta.appendChild(el('div', 'btx-talk-sub', [source.sp, source.lbl].filter(Boolean).join(' · ')));
     header.appendChild(meta);
+    // Subtle "open full talk" link, top-right, for live General Conference.
+    if (source.url) {
+      const a = el('a', 'btx-talk-source', 'Open full talk ↗');
+      a.href = source.url + (entry.anchor ? '#' + entry.anchor : '');
+      a.target = '_blank'; a.rel = 'noopener';
+      a.title = 'Open the full talk on churchofjesuschrist.org';
+      header.appendChild(a);
+    }
     bodyEl.appendChild(header);
 
     const body = el('div', 'btx-talk-scroll');
@@ -131,12 +140,8 @@
 
     const article = render(html);
     body.appendChild(article);
-    if (live && source.url) {
-      const a = el('a', 'btx-talk-source', 'Open full talk ↗');
-      a.href = source.url + (entry.anchor ? '#' + entry.anchor : '');
-      a.target = '_blank'; a.rel = 'noopener';
-      body.appendChild(a);
-    }
+    // Local highlights (saved on this machine, re-applied on reopen).
+    try { highlights() && highlights().attach(article, entry.talkId); } catch (e) { /* non-fatal */ }
     // Defer scroll until layout settles.
     requestAnimationFrame(() => scrollToCitation(article, body, { citId: entry.citId, anchor: live ? entry.anchor : null }));
   }

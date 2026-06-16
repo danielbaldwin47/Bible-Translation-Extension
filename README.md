@@ -1,26 +1,35 @@
 # Bible Translation Side-by-Side + Scripture Citation Index
 
 A Chrome study extension for [churchofjesuschrist.org/study](https://www.churchofjesuschrist.org/study)
-that, while you read a Bible chapter, shows (1) the **same chapter in other
-translations** (NRSV, NIV, NKJV, KJV, …) and (2) every **General Conference talk,
-Journal of Discourses sermon, and Teaching of Joseph Smith that cites each verse**
-— all in a side panel that blends into the Gospel Library reader.
+that, while you read **any standard-works chapter** (Old/New Testament, Book of
+Mormon, Doctrine & Covenants, Pearl of Great Price), shows (1) for the Bible, the
+**same chapter in other translations** (NRSV, NIV, NKJV, KJV, …) and (2) for every
+book, the **General Conference talks, Journal of Discourses sermons, and Teachings
+of Joseph Smith that cite each verse** — all in a side panel that blends into the
+Gospel Library reader.
 
 The panel mirrors the site's light/dark/sepia theme, font, and text size, follows
-you as you navigate between chapters, and scrolls along with the page.
+you as you navigate between chapters, scrolls along with the page, and is resizable.
 
 ## Features
 
-- **Two modes** in one panel, toggled in the header: **Translation** and **Citations**.
+- **Two modes** in one panel, toggled in the header: **Translation** (Bible only)
+  and **Citations** (all books). On non-Bible books only Citations shows.
 - **Translation** — auto-detects the chapter and loads it in your chosen version;
   one at a time, switchable from a dropdown; scrolls proportionally with the page.
-- **Citations** — for the current chapter, lists the talks/sermons that cite each
-  verse (grouped by verse, newest first, with a context snippet). Per-verse count
-  **badges** also appear in the Church's text; click one to jump to that verse.
+- **Citations** — a tidy accordion: each **verse** is a collapsible dropdown (with
+  its citation count), and inside it the talks are grouped by source type —
+  **General Conference**, **Journal of Discourses**, **Teachings of the Prophet
+  Joseph Smith** — newest first, each with a context snippet.
 - **Open sources inline** — clicking a citation opens the talk in the panel,
   scrolled to the cited paragraph: modern General Conference is fetched live from
-  churchofjesuschrist.org; Journal of Discourses / pre-1971 conference / Joseph
-  Smith come from bundled offline text.
+  churchofjesuschrist.org (with a subtle "Open full talk ↗" link in the header);
+  Journal of Discourses / pre-1971 conference / Joseph Smith come from bundled
+  offline text.
+- **Local highlights** — select text in the talk reader to highlight it; highlights
+  are saved on your machine and re-applied when you reopen the talk. Click a
+  highlight to remove it. (Not synced to your Church account.)
+- **Resizable** — set a width on the options page, or drag the panel's left edge.
 - **Blends in** — copies the site's resolved colors/fonts via CSS variables, so it
   tracks theme and font-size changes live (no dependence on the site's class names).
 - **Caching + rate-limit handling** for translations; citation data is local.
@@ -31,9 +40,10 @@ you as you navigate between chapters, and scrolls along with the page.
 The citation feature is powered by data extracted from the BYU "Scripture Citation
 Index" app databases (`core.53.db`, `content.53.db`), processed by
 `tools/build-citation-data.js` into the compact, web-fetchable bundle under
-`src/citations/data/`. This is for **personal study only** (BYU/Church content is
-not redistributable — another reason this stays a load-unpacked extension, not a
-Web Store listing).
+`src/citations/data/` (~62 MB: 88 book shards covering all standard works, ~125.8k
+citations, plus bundled offline text for non-Church-site sources). This is for
+**personal study only** (BYU/Church content is not redistributable — another reason
+this stays a load-unpacked extension, not a Web Store listing).
 
 The raw app DBs are **not shipped** (they'd bloat the unpacked extension by ~100 MB
 and aren't used at runtime). They live in git/LFS history at the commit that added
@@ -96,19 +106,23 @@ content script  ──messages──►  service worker  ──fetch──►  a
 | Path | Purpose |
 |------|---------|
 | `manifest.json` | MV3 manifest |
-| `src/shared/constants.js` | message types, storage keys, limits, defaults |
-| `src/shared/books.js` | 66-book LDS-slug → USFM / full-name mapping |
+| `src/shared/constants.js` | message types, storage keys, limits, defaults (incl. panel width) |
+| `src/shared/books.js` | LDS-slug maps: 66 Bible (→ USFM/name) + Book of Mormon / D&C / PGP |
 | `src/background/service-worker.js` | message router |
 | `src/background/api.js` | api.bible + bible-api.com fetch + normalization |
 | `src/background/cache.js` | chapter/bibles cache (chrome.storage.local) |
 | `src/background/ratelimit.js` | 15/30s + daily request limiting |
-| `src/content/detect.js` | chapter detection + SPA navigation |
+| `src/content/detect.js` | chapter detection (all standard works) + SPA navigation |
 | `src/content/theme.js` | theme/font mirroring |
 | `src/content/sanitize.js` | safe IR → DOM renderer |
-| `src/content/panel.js` | panel UI + scroll-sync |
+| `src/content/panel.js` | panel UI, scroll-sync, width + drag-resize |
 | `src/content/content.js` | orchestrator |
+| `src/citations/cit-panel.js` | citations accordion (verse → source type → talks) |
+| `src/citations/talk-view.js` | inline talk reader + sanitizer |
+| `src/citations/highlights.js` | local select-to-highlight in the reader |
 | `src/options/` | settings page |
-| `tools/validate-books.js` | sanity checks (run with `node`) |
+| `tools/build-citation-data.js` | builds `src/citations/data/` from the BYU DBs |
+| `tools/validate-books.js`, `tools/validate-citations.js` | sanity checks (run with `node`) |
 | `tools/make-icons.js` | regenerates the icon PNGs |
 
 ## Development
@@ -125,6 +139,12 @@ Gospel Library tab) to pick up changes.
 
 - Verse numbering differs across translations, so the panel does **not** attempt
   per-verse alignment — scroll-sync is proportional, and whole chapters line up.
+- Translation is Bible-only (there's no api.bible edition of the Book of Mormon,
+  D&C, or Pearl of Great Price); those books show Citations only.
+- Citations are verse-keyed; a tiny fraction of source citations reference a whole
+  chapter/section (or front matter) with no verse and aren't listed.
+- Highlights are stored locally on this machine (`chrome.storage.local`) — they're
+  not synced to your Church account and won't appear on other devices.
 - The icons are generated by `tools/make-icons.js`; replace `icons/*.png` with your
   own art if you like.
 - Respect each translation's license terms; this tool is for personal study.

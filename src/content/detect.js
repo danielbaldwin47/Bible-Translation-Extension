@@ -16,16 +16,17 @@
 
   const PATH_RE = /^\/study\/scriptures\/([^/]+)\/([^/]+)\/(\d+)$/;
 
-  // Returns { collection, ldsBook, chapter, lang } or null if not a Bible chapter.
+  // Returns { collection, ldsBook, chapter, lang, isBible } or null if the URL is
+  // not a citation-indexed standard-works chapter. isBible gates translation mode;
+  // non-Bible books (BoM/D&C/PGP) are citations-only.
   function parseLocation(pathname, search) {
     const m = PATH_RE.exec(pathname || '');
     if (!m) return null;
     const collection = m[1];
-    if (!BOOKS.isBibleCollection(collection)) return null;
     const ldsBook = m[2];
-    if (!BOOKS.ldsToUsfm(ldsBook)) return null; // unknown/non-canonical slug
+    if (!BOOKS.isKnownBook(collection, ldsBook)) return null; // unknown/non-indexed
     const lang = new URLSearchParams(search || '').get('lang') || 'eng';
-    return { collection, ldsBook, chapter: m[3], lang };
+    return { collection, ldsBook, chapter: m[3], lang, isBible: BOOKS.isBibleCollection(collection) };
   }
 
   function toUsfmChapterId(parsed) {

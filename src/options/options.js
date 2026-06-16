@@ -21,6 +21,8 @@
     translationsList: $('translationsList'),
     defaultTranslation: $('defaultTranslation'),
     actOnNonEngOnly: $('actOnNonEngOnly'),
+    sidebarWidth: $('sidebarWidth'),
+    sidebarWidthOut: $('sidebarWidthOut'),
     save: $('save'),
     saveStatus: $('saveStatus'),
   };
@@ -131,6 +133,7 @@
       enabledTranslations: enabled,
       defaultTranslationId: defaultId,
       actOnNonEngOnly: els.actOnNonEngOnly.checked,
+      sidebarWidth: Number(els.sidebarWidth.value) || 380,
     };
     await chrome.storage.sync.set({ [C.SETTINGS_KEY]: next });
     settings = next;
@@ -144,6 +147,13 @@
 
     els.apiKey.value = settings.apiKey || '';
     els.actOnNonEngOnly.checked = settings.actOnNonEngOnly !== false;
+
+    const w = Number(settings.sidebarWidth) || 380;
+    els.sidebarWidth.value = String(w);
+    els.sidebarWidthOut.textContent = w + 'px';
+    els.sidebarWidth.addEventListener('input', () => {
+      els.sidebarWidthOut.textContent = els.sidebarWidth.value + 'px';
+    });
 
     els.toggleKey.addEventListener('click', () => {
       const showing = els.apiKey.type === 'text';

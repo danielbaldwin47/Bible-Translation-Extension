@@ -12,11 +12,28 @@
 
   const CORPUS_TAG = { G: 'GC', E: 'GC', J: 'JoD', T: 'TPJS' };
 
+  // Source-type buckets shown as sub-dropdowns under each verse, in this order.
+  // Each talk keeps its own CORPUS_TAG; E and G both count as General Conference.
+  const GROUPS = [
+    { key: 'gc', label: 'General Conference', corpora: ['G', 'E'] },
+    { key: 'jod', label: 'Journal of Discourses', corpora: ['J'] },
+    { key: 'tpjs', label: 'Teachings of the Prophet Joseph Smith', corpora: ['T'] },
+  ];
+
   function el(tag, cls, text) {
     const n = document.createElement(tag);
     if (cls) n.className = cls;
     if (text != null) n.textContent = text;
     return n;
+  }
+
+  // A <summary> with a custom caret, a label, and a right-aligned count pill.
+  function summaryRow(cls, labelText, count) {
+    const sum = el('summary', cls);
+    sum.appendChild(el('span', 'btx-caret'));
+    sum.appendChild(el('span', 'btx-cit-label', labelText));
+    sum.appendChild(el('span', 'btx-cit-count', String(count)));
+    return sum;
   }
 
   function entryRow(entry, onOpenTalk) {
@@ -63,15 +80,23 @@
     for (const v of verses) {
       const entries = data.byVerse[v];
       if (!entries || !entries.length) continue;
-      const group = el('div', 'btx-cit-group');
-      if (String(v) === String(focusVerse)) group.classList.add('btx-cit-focus');
-      const vh = el('div', 'btx-cit-vhead');
-      vh.appendChild(el('span', 'btx-cit-vnum', `Verse ${v}`));
-      vh.appendChild(el('span', 'btx-cit-vcount', String(entries.length)));
-      group.appendChild(vh);
-      for (const entry of entries) group.appendChild(entryRow(entry, onOpenTalk));
-      bodyEl.appendChild(group);
-      if (String(v) === String(focusVerse)) focusEl = group;
+
+      // Verse-level dropdown, collapsed by default.
+      const vgroup = el('details', 'btx-cit-vgroup');
+      vgroup.appendChild(summaryRow('btx-cit-vhead', `Verse ${v}`, entries.length));
+
+      // Bucket this verse's entries (already newest-first) by source type.
+      for (const g of GROUPS) {
+        const items = entries.filter((e) => g.corpora.includes((e.source || {}).c));
+        if (!items.length) continue;
+        const cgroup = el('details', 'btx-cit-cgroup');
+        cgroup.appendChild(summaryRow('btx-cit-chead', g.label, items.length));
+        for (const entry of items) cgroup.appendChild(entryRow(entry, onOpenTalk));
+        vgroup.appendChild(cgroup);
+      }
+
+      if (String(v) === String(focusVerse)) { vgroup.open = true; vgroup.classList.add('btx-cit-focus'); focusEl = vgroup; }
+      bodyEl.appendChild(vgroup);
     }
 
     if (focusEl) requestAnimationFrame(() => { bodyEl.scrollTop = Math.max(0, focusEl.offsetTop - 50); });

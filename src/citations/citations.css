@@ -1,7 +1,6 @@
 /*
  * Citation-index styles. Panel-scoped rules live under #btx-root and reuse the
- * theme variables set by panel.css/theme.js. The per-verse badge lives in the
- * Church's own DOM (outside #btx-root), so it is styled standalone.
+ * theme variables set by panel.css/theme.js.
  */
 
 /* ---- Mode toggle ---- */
@@ -30,24 +29,74 @@
   color: #fff;
 }
 
-/* ---- Citation list ---- */
+/* ---- Citation list (accordion: verse -> source type -> talks) ---- */
 #btx-root .btx-cit-summary {
   font-size: 12px;
   color: var(--btx-muted);
   margin-bottom: 10px;
 }
-#btx-root .btx-cit-group { margin-bottom: 16px; }
-#btx-root .btx-cit-group.btx-cit-focus { outline: 2px solid var(--btx-accent); border-radius: 8px; padding: 6px; margin: -6px -6px 10px; }
-#btx-root .btx-cit-vhead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--btx-border);
-  padding-bottom: 3px;
+
+/* Verse-level dropdown */
+#btx-root .btx-cit-vgroup {
+  border: 1px solid var(--btx-border);
+  border-radius: 8px;
   margin-bottom: 6px;
+  overflow: hidden;
 }
-#btx-root .btx-cit-vnum { font-weight: 700; font-size: 13px; }
-#btx-root .btx-cit-vcount { font-size: 11px; color: var(--btx-muted); }
+#btx-root .btx-cit-vgroup.btx-cit-focus { outline: 2px solid var(--btx-accent); }
+
+/* Shared summary styling (custom caret, native marker hidden) */
+#btx-root summary.btx-cit-vhead,
+#btx-root summary.btx-cit-chead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+#btx-root summary.btx-cit-vhead::-webkit-details-marker,
+#btx-root summary.btx-cit-chead::-webkit-details-marker { display: none; }
+#btx-root summary.btx-cit-vhead {
+  padding: 8px 10px;
+  font-weight: 700;
+  font-size: 13.5px;
+}
+#btx-root summary.btx-cit-vhead:hover { background: var(--btx-border); }
+
+#btx-root .btx-caret {
+  flex: 0 0 auto;
+  width: 0; height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  opacity: 0.6;
+  transition: transform 0.12s;
+}
+#btx-root details[open] > summary > .btx-caret { transform: rotate(90deg); }
+
+#btx-root .btx-cit-label { flex: 1 1 auto; }
+#btx-root .btx-cit-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--btx-accent);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+
+/* Source-type sub-dropdown inside a verse */
+#btx-root .btx-cit-cgroup { border-top: 1px solid var(--btx-border); }
+#btx-root summary.btx-cit-chead {
+  padding: 6px 10px 6px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--btx-muted);
+}
+#btx-root summary.btx-cit-chead:hover { background: var(--btx-border); }
+#btx-root summary.btx-cit-chead .btx-cit-count { background: var(--btx-muted); }
+#btx-root .btx-cit-cgroup > .btx-cit { margin: 2px 8px; }
 
 #btx-root .btx-cit {
   padding: 8px;
@@ -95,6 +144,7 @@
   font-size: 13px;
 }
 #btx-root .btx-talk-back:hover { background: var(--btx-border); }
+#btx-root .btx-talk-meta { flex: 1 1 auto; min-width: 0; }
 #btx-root .btx-talk-title { font-weight: 700; font-size: 14px; }
 #btx-root .btx-talk-sub { font-size: 12px; color: var(--btx-muted); }
 #btx-root .btx-talk { font-size: var(--btx-size); line-height: var(--btx-line); }
@@ -105,29 +155,48 @@
   border-radius: 4px;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--btx-accent) 22%, transparent);
 }
-#btx-root .btx-talk-source { display: inline-block; margin-top: 12px; color: var(--btx-accent); font-size: 13px; }
+/* "Open full talk" link, pinned top-right in the reader header. */
+#btx-root .btx-talk-source {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  color: var(--btx-accent);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+  border: 1px solid var(--btx-border);
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+#btx-root .btx-talk-source:hover { background: var(--btx-border); }
 
-/* ---- Per-verse badge (lives in the Church DOM) ---- */
-.btx-verse-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  margin-right: 5px;
-  border: none;
-  border-radius: 9px;
-  background: #006184;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 16px;
-  vertical-align: middle;
+/* ---- Local highlights (saved on this machine) ---- */
+#btx-root .btx-hl {
+  background: color-mix(in srgb, #f4c430 55%, transparent);
+  border-radius: 2px;
   cursor: pointer;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
 }
-.btx-verse-badge:hover { filter: brightness(1.12); }
-@media (prefers-color-scheme: dark) {
-  .btx-verse-badge { background: #2a8bb0; }
+#btx-root[data-btx-theme='dark'] .btx-hl {
+  background: color-mix(in srgb, #f4c430 38%, transparent);
 }
+#btx-root .btx-hl-menu {
+  position: fixed;
+  z-index: 2147483600;
+  background: var(--btx-bg);
+  border: 1px solid var(--btx-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  padding: 3px;
+}
+#btx-root .btx-hl-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--btx-fg);
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#btx-root .btx-hl-btn:hover { background: var(--btx-border); }

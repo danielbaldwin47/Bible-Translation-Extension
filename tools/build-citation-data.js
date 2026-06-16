@@ -42,8 +42,8 @@ const CONTENT = arg('--content', path.resolve(__dirname, '..', 'source-data', 'c
 const OUT = arg('--out', path.resolve(__dirname, '..', 'src', 'citations', 'data'));
 const INSPECT = process.argv.includes('--inspect');
 
-// OT=1, NT=2 are the only volumes the extension uses.
-const BIBLE_VOLUMES = new Set([1, 2]);
+// Volumes: 1=OT, 2=NT, 3=Book of Mormon, 4=D&C, 5=Pearl of Great Price.
+const ALL_VOLUMES = new Set([1, 2, 3, 4, 5]);
 
 // ---- helpers ----
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', eacute: 'é', egrave: 'è', uuml: 'ü', ouml: 'ö', auml: 'ä', ccedil: 'ç', ntilde: 'ñ', uacute: 'ú', iacute: 'í', oacute: 'ó', aacute: 'á', agrave: 'à', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', ldquo: '“', rdquo: '”', hellip: '…' };
@@ -78,13 +78,19 @@ function openDb(file) {
   return new DatabaseSync(file, { readOnly: true });
 }
 
-// Build LDS slug -> book.ID for OT/NT, matching on FullName (KJV names) with
-// Abbr / overrides as fallback. Reuses LDS_TO_BIBLEAPI (slug -> full name).
+// DB Abbr -> our slug for cases the normalization can't reach. D&C sections are
+// stored with Abbr "sec" but the Church URL slug (and our map key) is "dc".
+const ABBR_ALIAS = { sec: 'dc' };
+
+// Build LDS slug -> book.ID for all standard works, matching on Abbr (normalized
+// spaces→hyphens, e.g. '1 ne' → '1-ne') with an alias table and FullName fallback.
+// Reuses the Bible + non-Bible name maps from books.js. 0-chapter front matter
+// (title page, intros, witnesses, facsimiles) has no slug, so it is skipped.
 function buildBookMap(core) {
-  // The DB's book.Abbr equals our LDS slug (after normalizing spaces→hyphens,
-  // e.g. '1 sam' → '1-sam'); FullName is a fallback. Display name comes from our
-  // clean LDS_TO_BIBLEAPI map (DB FullName has forms like "The Acts").
-  const mySlugs = new Set(Object.keys(BOOKS.LDS_TO_USFM));
+  const mySlugs = new Set([
+    ...Object.keys(BOOKS.LDS_TO_USFM),
+    ...Object.keys(BOOKS.NON_BIBLE_NAMES),
+  ]);
   const nameToSlug = {};
   for (const [slug, full] of Object.entries(BOOKS.LDS_TO_BIBLEAPI)) nameToSlug[full.toLowerCase()] = slug;
 
@@ -92,16 +98,18 @@ function buildBookMap(core) {
   const map = {}; // slug -> { bookId, fullName }
   const unmatched = [];
   for (const r of rows) {
-    if (!BIBLE_VOLUMES.has(r.ParentBookID)) continue; // only OT/NT child books
-    const norm = String(r.Abbr || '').toLowerCase().trim().replace(/\s+/g, '-');
+    if (!ALL_VOLUMES.has(r.ParentBookID)) continue;
+    const norm0 = String(r.Abbr || '').toLowerCase().trim().replace(/\s+/g, '-');
+    const norm = ABBR_ALIAS[norm0] || norm0;
     const slug = mySlugs.has(r.Abbr) ? r.Abbr
       : mySlugs.has(norm) ? norm
       : nameToSlug[String(r.FullName || '').toLowerCase().trim()] || null;
-    if (slug) map[slug] = { bookId: r.ID, fullName: BOOKS.LDS_TO_BIBLEAPI[slug] || r.FullName };
+    if (slug) map[slug] = { bookId: r.ID, fullName: BOOKS.bookFullName(slug) || r.FullName };
     else unmatched.push(`${r.ID}:${r.FullName} (Abbr=${r.Abbr})`);
   }
   if (unmatched.length) {
-    console.warn(`WARN: ${unmatched.length} OT/NT books did not match a slug:\n  ` + unmatched.join('\n  '));
+    // Most unmatched rows are intentionally-skipped front matter; log for review.
+    console.warn(`Note: ${unmatched.length} book rows had no slug (front matter is expected):\n  ` + unmatched.join('\n  '));
   }
   return map;
 }
@@ -206,7 +214,7 @@ function build(core, content) {
 
   const bookMap = buildBookMap(core);
   const slugs = Object.keys(bookMap);
-  console.log(`Mapped ${slugs.length}/66 Bible books.`);
+  console.log(`Mapped ${slugs.length} standard-works books.`);
 
   const sources = {};        // talkId -> meta
   const talkHtmlCache = {};   // talkId -> decompressed html (for snippets/bundling)

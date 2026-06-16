@@ -84,6 +84,7 @@
         enabledTranslations: [], // [{ id, name, abbr, provider, copyright }]
         defaultTranslationId: '',
         actOnNonEngOnly: true,
+        sidebarWidth: 380, // panel width in px (also adjustable by dragging)
       };
     },
 
