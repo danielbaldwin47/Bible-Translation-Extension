@@ -1,0 +1,294 @@
+#!/usr/bin/env node
+/*
+ * Build the bundled Scripture Citation Index data for the extension.
+ *
+ * Reads the BYU "Scripture Citation Index" app SQLite databases and emits a
+ * compact, web-fetchable dataset under src/citations/data/. Only Bible (OT/NT)
+ * citations are emitted, since the extension activates on Bible chapters.
+ *
+ * Run (Node 22+, built-in SQLite + zlib — no npm install):
+ *   node --experimental-sqlite tools/build-citation-data.js \
+ *     --core ./core_53.db --content ./content_53.db --out ./src/citations/data
+ *
+ * Inspect the raw DBs first (recommended before a full build) to confirm the
+ * real talk.URL formats and talk HTML markup:
+ *   node --experimental-sqlite tools/build-citation-data.js --core ./core_53.db --content ./content_53.db --inspect
+ *
+ * Output layout:
+ *   data/index.json            { builtAt, dbUpdated, books:[{slug,fullName,bookId,citations}], counts }
+ *   data/sources.json          { [talkId]: { c, sp, ti, d, lbl, url? } }   // one entry per cited talk
+ *   data/citations/{slug}.json { cites:{ [citId]:{t,v,sn} }, index:{ [chap]:{ [verse]:[citId,...] } } }
+ *   data/talks/{talkId}.html.gz  gzipped cleaned HTML for corpus E/J/T only (G is fetched live)
+ */
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const zlib = require('node:zlib');
+const { DatabaseSync } = require('node:sqlite');
+const BOOKS = require('../src/shared/books.js'); // { LDS_TO_USFM, LDS_TO_BIBLEAPI, ... }
+
+// ---- args ----
+function arg(name, def) {
+  const i = process.argv.indexOf(name);
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def;
+}
+const CORE = arg('--core', './core_53.db');
+const CONTENT = arg('--content', './content_53.db');
+const OUT = arg('--out', path.resolve(__dirname, '..', 'src', 'citations', 'data'));
+const INSPECT = process.argv.includes('--inspect');
+
+// OT=1, NT=2 are the only volumes the extension uses.
+const BIBLE_VOLUMES = new Set([1, 2]);
+
+// ---- helpers ----
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', eacute: 'é', egrave: 'è', uuml: 'ü', ouml: 'ö', auml: 'ä', ccedil: 'ç', ntilde: 'ñ', uacute: 'ú', iacute: 'í', oacute: 'ó', aacute: 'á', agrave: 'à', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', ldquo: '“', rdquo: '”', hellip: '…' };
+function decodeEntities(s) {
+  if (!s) return '';
+  return String(s).replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, code) => {
+    if (code[0] === '#') {
+      const n = code[1] === 'x' || code[1] === 'X' ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+      return Number.isFinite(n) ? String.fromCodePoint(n) : m;
+    }
+    return Object.prototype.hasOwnProperty.call(ENTITIES, code.toLowerCase()) ? ENTITIES[code.toLowerCase()] : m;
+  });
+}
+function stripTags(html) {
+  return decodeEntities(String(html).replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+}
+function decompressTalk(buf) {
+  // First 2 bytes are a custom header; standard zlib stream starts at byte 2.
+  const bytes = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  return zlib.inflateSync(bytes.subarray(2)).toString('utf8');
+}
+function mkdirp(p) { fs.mkdirSync(p, { recursive: true }); }
+function writeJSON(p, obj) { fs.writeFileSync(p, JSON.stringify(obj)); }
+
+// ---- DB ----
+function openDb(file) {
+  if (!fs.existsSync(file)) {
+    console.error(`ERROR: database not found: ${file}`);
+    console.error('Deliver core_53.db / content_53.db to this session, then pass --core/--content.');
+    process.exit(2);
+  }
+  return new DatabaseSync(file, { readOnly: true });
+}
+
+// Build LDS slug -> book.ID for OT/NT, matching on FullName (KJV names) with
+// Abbr / overrides as fallback. Reuses LDS_TO_BIBLEAPI (slug -> full name).
+function buildBookMap(core) {
+  const nameToSlug = {};
+  for (const [slug, full] of Object.entries(BOOKS.LDS_TO_BIBLEAPI)) {
+    nameToSlug[full.toLowerCase()] = slug;
+  }
+  // Known alternate spellings between the DB and our names, if any.
+  const OVERRIDES = { 'song of songs': 'song' };
+  const rows = core.prepare('SELECT ID, Abbr, FullName, ParentBookID FROM book').all();
+  const map = {}; // slug -> { bookId, fullName }
+  const unmatched = [];
+  for (const r of rows) {
+    if (!BIBLE_VOLUMES.has(r.ParentBookID)) continue; // only OT/NT child books
+    const fn = String(r.FullName || '').toLowerCase().trim();
+    const slug = nameToSlug[fn] || OVERRIDES[fn] || null;
+    if (slug) map[slug] = { bookId: r.ID, fullName: r.FullName };
+    else unmatched.push(`${r.ID}:${r.FullName} (Abbr=${r.Abbr})`);
+  }
+  if (unmatched.length) {
+    console.warn(`WARN: ${unmatched.length} OT/NT books did not match a slug:\n  ` + unmatched.join('\n  '));
+  }
+  return map;
+}
+
+// ---- corpus-specific bits (validate against --inspect output) ----
+
+// Transform the stored talk.URL into a same-origin churchofjesuschrist.org study
+// URL for modern General Conference (corpus G). Returns null if not derivable.
+function toChurchUrl(url) {
+  if (!url) return null;
+  // Old lds.org / churchofjesuschrist.org general-conference paths:
+  // .../general-conference/{year}/{mo}/{slug}  ->  /study/general-conference/{year}/{mo}/{slug}
+  const m = /general-conference\/(\d{4})\/(\d{2})\/([a-z0-9-]+)/i.exec(url);
+  if (m) {
+    return `https://www.churchofjesuschrist.org/study/general-conference/${m[1]}/${m[2]}/${m[3]}?lang=eng`;
+  }
+  return null;
+}
+
+// Human label for a citation's source.
+function sourceLabel(core, talk, cit) {
+  if (talk.Corpus === 'G' || talk.Corpus === 'E') {
+    const d = talk.Date || '';
+    const y = d.slice(0, 4);
+    const mo = d.slice(5, 7);
+    const season = mo === '04' ? 'April' : mo === '10' ? 'October' : (mo ? mo : '');
+    return `${season} ${y} General Conference`.trim();
+  }
+  if (talk.Corpus === 'J') {
+    const vol = cit.Volume || '';
+    const pg = cit.Page || '';
+    return `Journal of Discourses${vol ? ' ' + vol : ''}${pg ? ':' + pg : ''}`;
+  }
+  if (talk.Corpus === 'T') {
+    return `Teachings of the Prophet Joseph Smith${cit.Page ? ', p. ' + cit.Page : ''}`;
+  }
+  return '';
+}
+
+// Best-effort snippet: the citing paragraph's text, truncated. Refined once the
+// real citation <span> markup is confirmed via --inspect.
+function extractSnippet(html, cit, book) {
+  if (!html) return '';
+  // Split into paragraphs and find one mentioning the book + chapter reference.
+  const paras = html.split(/<\/p>/i).map((p) => stripTags(p)).filter(Boolean);
+  const cite = (book && book.fullName) ? book.fullName : '';
+  const ref = new RegExp(`${cite}[^0-9]{0,4}${cit.Chapter}\\b`, 'i');
+  let para = paras.find((p) => ref.test(p));
+  if (!para) return '';
+  if (para.length > 160) para = para.slice(0, 157).trimEnd() + '…';
+  return para;
+}
+
+// ---- inspect ----
+function inspect(core, content) {
+  console.log('=== core tables ===');
+  for (const t of core.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all()) {
+    let n = '?';
+    try { n = core.prepare(`SELECT COUNT(*) c FROM "${t.name}"`).get().c; } catch (e) {}
+    console.log(`  ${t.name}: ${n}`);
+  }
+  console.log('\n=== OT/NT books (volumes 1,2) — sample ===');
+  for (const r of core.prepare('SELECT ID,Abbr,FullName,ParentBookID,NumChapters FROM book WHERE ParentBookID IN (1,2) ORDER BY ID').all().slice(0, 8)) {
+    console.log(`  ${r.ID} ${r.Abbr} | ${r.FullName} | vol=${r.ParentBookID} chs=${r.NumChapters}`);
+  }
+  console.log('\n=== talk.URL samples per corpus ===');
+  for (const corpus of ['E', 'G', 'J', 'T']) {
+    const rows = core.prepare('SELECT ID,Corpus,Title,Date,URL FROM talk WHERE Corpus=? LIMIT 3').all(corpus);
+    for (const r of rows) console.log(`  [${corpus}] id=${r.ID} date=${r.Date} url=${r.URL}\n        title=${r.Title}`);
+    const g = rows[0];
+    if (corpus === 'G' && g) console.log(`        -> church url: ${toChurchUrl(g.URL)}`);
+  }
+  console.log('\n=== sample talk HTML (first ~1200 chars) per corpus ===');
+  for (const corpus of ['E', 'G', 'J', 'T']) {
+    const row = core.prepare('SELECT ID FROM talk WHERE Corpus=? LIMIT 1').get(corpus);
+    if (!row) continue;
+    const body = content.prepare('SELECT Text FROM talkbody WHERE TalkID=?').get(row.ID);
+    if (!body) { console.log(`  [${corpus}] talk ${row.ID}: no body`); continue; }
+    let html;
+    try { html = decompressTalk(body.Text); } catch (e) { console.log(`  [${corpus}] decompress failed: ${e.message}`); continue; }
+    console.log(`\n  --- [${corpus}] talk ${row.ID} (${html.length} chars) ---`);
+    console.log(html.slice(0, 1200).replace(/\n/g, '\n  '));
+  }
+}
+
+// ---- build ----
+function build(core, content) {
+  mkdirp(OUT);
+  mkdirp(path.join(OUT, 'citations'));
+  mkdirp(path.join(OUT, 'talks'));
+
+  const bookMap = buildBookMap(core);
+  const slugs = Object.keys(bookMap);
+  console.log(`Mapped ${slugs.length}/66 Bible books.`);
+
+  const sources = {};        // talkId -> meta
+  const talkHtmlCache = {};   // talkId -> decompressed html (for snippets/bundling)
+  const bundledTalks = new Set();
+  let totalCitations = 0;
+  const bookCounts = [];
+
+  const getTalkHtml = (talkId) => {
+    if (talkId in talkHtmlCache) return talkHtmlCache[talkId];
+    const row = content.prepare('SELECT Text FROM talkbody WHERE TalkID=?').get(talkId);
+    let html = null;
+    if (row && row.Text) { try { html = decompressTalk(row.Text); } catch (e) { html = null; } }
+    talkHtmlCache[talkId] = html;
+    return html;
+  };
+
+  const rowStmt = core.prepare(`
+    SELECT cv.Verse AS verse, c.ID AS citId, c.Chapter AS chapter, c.Verses AS verses,
+           c.Page AS page, c.Volume AS volume,
+           t.ID AS talkId, t.Corpus AS corpus, t.Title AS title, t.Date AS date, t.URL AS url,
+           s.GivenNames AS given, s.LastNames AS last
+    FROM citation_verse cv
+    JOIN citation c ON cv.CitationID = c.ID
+    JOIN talk t ON c.TalkID = t.ID
+    LEFT JOIN speaker s ON t.SpeakerID = s.ID
+    WHERE c.BookID = ?
+    ORDER BY c.Chapter, cv.Verse, t.Date DESC
+  `);
+
+  for (const slug of slugs) {
+    const book = bookMap[slug];
+    const rows = rowStmt.all(book.bookId);
+    const cites = {};            // citId -> { t, v, sn }
+    const index = {};            // chapter -> verse -> [citId]
+    let count = 0;
+
+    for (const r of rows) {
+      const ch = String(r.chapter);
+      const vs = String(r.verse);
+      (index[ch] = index[ch] || {});
+      (index[ch][vs] = index[ch][vs] || []);
+      if (!index[ch][vs].includes(r.citId)) index[ch][vs].push(r.citId);
+
+      if (!(r.citId in cites)) {
+        const html = getTalkHtml(r.talkId);
+        cites[r.citId] = {
+          t: r.talkId,
+          v: r.verses || vs,
+          sn: extractSnippet(html, { Chapter: r.chapter, Page: r.page, Volume: r.volume }, book),
+        };
+        count++;
+      }
+
+      if (!(r.talkId in sources)) {
+        sources[r.talkId] = {
+          c: r.corpus,
+          sp: decodeEntities([r.given, r.last].filter(Boolean).join(' ')) || 'Unknown',
+          ti: decodeEntities(r.title || ''),
+          d: (r.date || '').slice(0, 7),
+          lbl: sourceLabel(core, { Corpus: r.corpus, Date: r.date }, { Page: r.page, Volume: r.volume }),
+        };
+        const churchUrl = r.corpus === 'G' ? toChurchUrl(r.url) : null;
+        if (churchUrl) sources[r.talkId].url = churchUrl;
+      }
+
+      // Bundle full text for E/J/T (not on the church site); G is fetched live.
+      if (r.corpus !== 'G' && !bundledTalks.has(r.talkId)) {
+        const html = getTalkHtml(r.talkId);
+        if (html) {
+          fs.writeFileSync(path.join(OUT, 'talks', `${r.talkId}.html.gz`), zlib.gzipSync(Buffer.from(html, 'utf8')));
+          bundledTalks.add(r.talkId);
+        }
+      }
+    }
+
+    writeJSON(path.join(OUT, 'citations', `${slug}.json`), { book: slug, fullName: book.fullName, cites, index });
+    totalCitations += count;
+    bookCounts.push({ slug, fullName: book.fullName, bookId: book.bookId, citations: count });
+    // free per-book html cache to bound memory
+    for (const k of Object.keys(talkHtmlCache)) delete talkHtmlCache[k];
+  }
+
+  writeJSON(path.join(OUT, 'sources.json'), sources);
+  let dbUpdated = '';
+  try { dbUpdated = String(core.prepare('SELECT * FROM updated LIMIT 1').get() && Object.values(core.prepare('SELECT * FROM updated LIMIT 1').get())[0] || ''); } catch (e) {}
+  writeJSON(path.join(OUT, 'index.json'), {
+    builtAt: new Date().toISOString(),
+    dbUpdated,
+    books: bookCounts,
+    counts: { books: slugs.length, citations: totalCitations, sources: Object.keys(sources).length, bundledTalks: bundledTalks.size },
+  });
+
+  console.log(`\nDone. ${totalCitations} citations across ${slugs.length} books; ${Object.keys(sources).length} sources; ${bundledTalks.size} bundled talks.`);
+  console.log(`Output: ${OUT}`);
+}
+
+// ---- main ----
+const core = openDb(CORE);
+const content = openDb(CONTENT);
+if (INSPECT) inspect(core, content);
+else build(core, content);
+core.close();
+content.close();
