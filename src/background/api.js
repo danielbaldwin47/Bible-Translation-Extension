@@ -42,10 +42,40 @@
       id: b.id,
       name: b.name,
       abbr: b.abbreviationLocal || b.abbreviation || '',
-      copyright: b.copyright || (b.description || ''),
+      copyright: b.copyrightStatement || b.copyright || '',
       provider: C.PROVIDER_APIBIBLE,
     }));
+    // The list endpoint usually omits copyright, which the options page needs to
+    // tell free (public-domain/CC) versions from the copyrighted ones the user
+    // added. Backfill it from the per-version endpoint (parallel, capped).
+    await fillCopyrights(key, bibles.filter((b) => !b.copyright));
     return { bibles };
+  }
+
+  // Fill in each bible's copyright from GET /bibles/{id}, with limited
+  // concurrency. Best-effort: failures leave copyright empty (version shown).
+  async function fillCopyrights(key, list) {
+    if (!list.length) return;
+    const CONCURRENCY = 6;
+    let i = 0;
+    async function worker() {
+      while (i < list.length) {
+        const b = list[i++];
+        try {
+          const r = await fetch(`${C.API_BIBLE_BASE}/bibles/${encodeURIComponent(b.id)}`, {
+            headers: { 'api-key': key },
+          });
+          if (r.ok) {
+            const j = await r.json();
+            const d = j.data || {};
+            b.copyright = d.copyright || d.copyrightStatement || '';
+          }
+        } catch (e) { /* ignore */ }
+      }
+    }
+    const workers = [];
+    for (let k = 0; k < Math.min(CONCURRENCY, list.length); k++) workers.push(worker());
+    await Promise.all(workers);
   }
 
   // ---- Map HTTP status -> error code ----
@@ -129,7 +159,8 @@
       } else if (item.type === 'tag' && item.name === 'verse') {
         const n = item.attrs && item.attrs.number;
         if (n) runs.push({ t: 'v', n: String(n) });
-        collectRuns(item.items, runs, wj);
+        // Do NOT recurse into the verse tag: its items only hold the verse
+        // number text again, which would duplicate the number in the output.
       } else if (item.type === 'tag') {
         const childWj = wj || (item.attrs && item.attrs.style === 'wj');
         collectRuns(item.items, runs, childWj);

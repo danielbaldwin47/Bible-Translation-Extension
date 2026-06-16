@@ -86,6 +86,15 @@
         actOnNonEngOnly: true,
       };
     },
+
+    // Heuristic: is a version free/open (public domain or Creative Commons)?
+    // Used to hide the free versions and surface only the copyrighted ones the
+    // user added to their api.bible key. Unknown/empty copyright -> treated as
+    // not-free (shown), so we never hide a wanted version we couldn't classify.
+    isFreeVersion(copyrightText) {
+      if (!copyrightText) return false;
+      return /public domain|creative commons|\bcc[\s-]?(by|0)/i.test(String(copyrightText));
+    },
   };
 
   // Expose to whichever context loaded this file.

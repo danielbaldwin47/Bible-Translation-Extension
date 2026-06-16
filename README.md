@@ -22,19 +22,18 @@ chapters, and scrolls along with the page.
 
 ## Translation sources
 
-Copyrighted translations (NRSV, NIV, NKJV, ESV, …) can't be bundled, so the
+Copyrighted translations (NIV, NKJV, NRSV, ESV, …) can't be bundled, so the
 extension uses **[scripture.api.bible](https://scripture.api.bible/)** with **your
 own free API key**:
 
 1. Sign up at <https://scripture.api.bible/> (Starter plan — free, personal use).
-2. On the free plan you can add **up to 3 copyrighted versions** to your key plus
-   many public-domain ones.
+2. On the free plan you can add **up to 3 copyrighted versions** to your key
+   (e.g. NIV, NKJV, NIRV) plus many public-domain ones.
 
-A second provider, **[bible-api.com](https://bible-api.com/)**, offers
-public-domain translations (KJV, ASV, WEB, …) with **no key required**.
-
-> Availability of NRSV/NIV/NKJV depends on what your specific api.bible key is
-> granted. The options page shows exactly which versions your key can access.
+> The options page lists only the **copyrighted versions you added** to your key
+> (the free public-domain ones are hidden, since the goal is to compare other
+> mainstream translations). Availability depends on what your key is granted —
+> NRSV, for example, isn't currently in the api.bible catalog.
 
 ## Install (load unpacked)
 

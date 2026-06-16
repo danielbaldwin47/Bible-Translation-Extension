@@ -2,6 +2,9 @@
  * Options page logic. Loads/saves settings to chrome.storage.sync, tests the
  * api.bible key (via the worker), and lets the user pick which translations to
  * enable + the default. Shared constants are available on window.__BTX.
+ *
+ * Only api.bible is supported, and the list is filtered to the copyrighted
+ * versions the user added (free public-domain/CC versions are hidden).
  */
 (function () {
   'use strict';
@@ -10,12 +13,10 @@
 
   const $ = (id) => document.getElementById(id);
   const els = {
-    providerRadios: () => document.querySelectorAll('input[name="provider"]'),
     apiKey: $('apiKey'),
     toggleKey: $('toggleKey'),
     testKey: $('testKey'),
     keyStatus: $('keyStatus'),
-    keyCard: $('keyCard'),
     translationsHint: $('translationsHint'),
     translationsList: $('translationsList'),
     defaultTranslation: $('defaultTranslation'),
@@ -24,7 +25,7 @@
     saveStatus: $('saveStatus'),
   };
 
-  let available = []; // [{id, name, abbr, copyright, provider}]
+  let available = []; // all versions the key returns: [{id, name, abbr, copyright, provider}]
   let settings = C.defaultSettings();
 
   function send(message) {
@@ -36,37 +37,38 @@
     });
   }
 
-  function selectedProvider() {
-    const checked = document.querySelector('input[name="provider"]:checked');
-    return checked ? checked.value : C.PROVIDER_APIBIBLE;
-  }
-
-  function isDefaultAbbr(abbr) {
-    const up = (abbr || '').toUpperCase();
-    return C.DEFAULT_ABBRS.some((d) => up === d || up.startsWith(d));
-  }
-
   function setStatus(elm, msg, kind) {
     elm.textContent = msg;
     elm.className = 'status' + (kind ? ' ' + kind : '');
   }
 
+  // Show only copyrighted versions (hide free public-domain/CC ones). If that
+  // leaves nothing (e.g. copyright couldn't be classified), fall back to all.
+  function displayList() {
+    const premium = available.filter((t) => !C.isFreeVersion(t.copyright));
+    return premium.length ? premium : available;
+  }
+
   function renderTranslations() {
     els.translationsList.textContent = '';
     if (!available.length) {
-      els.translationsHint.textContent = selectedProvider() === C.PROVIDER_APIBIBLE
-        ? 'Test your key to load the versions it can access.'
-        : 'Public-domain versions are listed below.';
+      els.translationsHint.textContent = 'Test your key to load the versions you added.';
       els.defaultTranslation.textContent = '';
       return;
     }
-    els.translationsHint.textContent = 'Check the versions you want available in the dropdown.';
+
+    const list = displayList();
+    const hidden = available.length - list.length;
+    els.translationsHint.textContent = hidden > 0
+      ? `Showing the ${list.length} copyrighted version(s) on your key (${hidden} free public-domain hidden).`
+      : 'Check the versions you want available in the dropdown.';
 
     const enabledIds = new Set((settings.enabledTranslations || []).map((t) => t.id));
     const hasPriorSelection = enabledIds.size > 0;
 
-    for (const t of available) {
-      const checked = hasPriorSelection ? enabledIds.has(t.id) : isDefaultAbbr(t.abbr);
+    for (const t of list) {
+      // No prior selection -> check them all (these are the versions you added).
+      const checked = hasPriorSelection ? enabledIds.has(t.id) : true;
       const label = document.createElement('label');
       label.className = 'check';
       const cb = document.createElement('input');
@@ -114,33 +116,18 @@
       return;
     }
     available = res.bibles || [];
-    setStatus(els.keyStatus, `Key works — ${available.length} English versions available.`, 'ok');
+    setStatus(els.keyStatus, `Key works — ${displayList().length} version(s) you added.`, 'ok');
     renderTranslations();
   }
 
-  function loadProviderTranslations() {
-    if (selectedProvider() === C.PROVIDER_BIBLEAPI) {
-      els.keyCard.style.opacity = '0.5';
-      available = C.BIBLE_API_TRANSLATIONS.map((t) => Object.assign({ provider: C.PROVIDER_BIBLEAPI, copyright: 'Public domain' }, t));
-      renderTranslations();
-    } else {
-      els.keyCard.style.opacity = '1';
-      // api.bible: populate only after a successful test (or auto-test if a key exists).
-      available = [];
-      renderTranslations();
-      if (els.apiKey.value.trim()) testKey();
-    }
-  }
-
   async function save() {
-    const provider = selectedProvider();
     const enabled = checkedTranslations();
     let defaultId = els.defaultTranslation.value;
     if (!enabled.some((t) => t.id === defaultId)) defaultId = enabled.length ? enabled[0].id : '';
 
     const next = {
       apiKey: els.apiKey.value.trim(),
-      provider,
+      provider: C.PROVIDER_APIBIBLE,
       enabledTranslations: enabled,
       defaultTranslationId: defaultId,
       actOnNonEngOnly: els.actOnNonEngOnly.checked,
@@ -155,12 +142,9 @@
     const data = await chrome.storage.sync.get(C.SETTINGS_KEY);
     settings = Object.assign(C.defaultSettings(), data[C.SETTINGS_KEY] || {});
 
-    // Hydrate form.
-    els.providerRadios().forEach((r) => { r.checked = r.value === settings.provider; });
     els.apiKey.value = settings.apiKey || '';
     els.actOnNonEngOnly.checked = settings.actOnNonEngOnly !== false;
 
-    els.providerRadios().forEach((r) => r.addEventListener('change', loadProviderTranslations));
     els.toggleKey.addEventListener('click', () => {
       const showing = els.apiKey.type === 'text';
       els.apiKey.type = showing ? 'password' : 'text';
@@ -169,7 +153,8 @@
     els.testKey.addEventListener('click', testKey);
     els.save.addEventListener('click', save);
 
-    loadProviderTranslations();
+    // Auto-test if a key is already stored, to populate the list.
+    if (settings.apiKey) testKey();
   }
 
   init();

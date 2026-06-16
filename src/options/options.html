@@ -14,20 +14,8 @@
       <code>churchofjesuschrist.org/study</code>.
     </p>
 
-    <section class="card">
-      <h2>1. Translation source</h2>
-      <label class="radio">
-        <input type="radio" name="provider" value="api.bible" />
-        <span><strong>scripture.api.bible</strong> — NRSV, NIV, NKJV and more (needs a free key)</span>
-      </label>
-      <label class="radio">
-        <input type="radio" name="provider" value="bible-api.com" />
-        <span><strong>bible-api.com</strong> — public-domain only (KJV, ASV, WEB…), no key</span>
-      </label>
-    </section>
-
     <section class="card" id="keyCard">
-      <h2>2. API key</h2>
+      <h2>1. API key</h2>
       <p class="hint">
         Get a free key at
         <a href="https://scripture.api.bible/" target="_blank" rel="noopener">scripture.api.bible</a>
@@ -43,18 +31,18 @@
     </section>
 
     <section class="card" id="translationsCard">
-      <h2>3. Translations to show</h2>
-      <p class="hint" id="translationsHint">Test your key to load the versions it can access.</p>
+      <h2>2. Translations to show</h2>
+      <p class="hint" id="translationsHint">Test your key to load the versions you added.</p>
       <div id="translationsList" class="checklist"></div>
     </section>
 
     <section class="card" id="defaultCard">
-      <h2>4. Default translation</h2>
+      <h2>3. Default translation</h2>
       <select id="defaultTranslation"></select>
     </section>
 
     <section class="card">
-      <h2>5. Options</h2>
+      <h2>4. Options</h2>
       <label class="check">
         <input type="checkbox" id="actOnNonEngOnly" />
         <span>Only show the panel on English (<code>lang=eng</code>) pages</span>
