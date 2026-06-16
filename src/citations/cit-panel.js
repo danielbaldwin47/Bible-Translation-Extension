@@ -65,7 +65,9 @@
     return row;
   }
 
-  // Render the chapter's citations into bodyEl.
+  // Render the chapter's citations into bodyEl. Builds into a single wrapper that
+  // is returned, so the orchestrator can cache + re-attach it (preserving scroll
+  // and which dropdowns are open) when toggling between modes.
   // opts: { slug, chapter, fullName, focusVerse, onOpenTalk }
   async function render(bodyEl, opts) {
     const { slug, chapter, fullName, focusVerse, onOpenTalk } = opts;
@@ -73,44 +75,46 @@
     bodyEl.appendChild(el('div', 'btx-state-text btx-cit-loading', 'Loading citations…'));
 
     const data = await citData().chapterCitations(slug, chapter);
-    bodyEl.textContent = '';
+
+    const wrap = el('div', 'btx-cit-list');
+    let focusEl = null;
 
     if (!data) {
-      bodyEl.appendChild(el('p', 'btx-state-text', 'No citation data for this book.'));
-      return;
-    }
-    const verses = Object.keys(data.byVerse).map(Number).sort((a, b) => a - b);
-    if (!verses.length || data.total === 0) {
-      bodyEl.appendChild(el('p', 'btx-state-text', `No talks cite ${fullName || ''} ${chapter}.`.trim()));
-      return;
-    }
+      wrap.appendChild(el('p', 'btx-state-text', 'No citation data for this book.'));
+    } else {
+      const verses = Object.keys(data.byVerse).map(Number).sort((a, b) => a - b);
+      if (!verses.length || data.total === 0) {
+        wrap.appendChild(el('p', 'btx-state-text', `No talks cite ${fullName || ''} ${chapter}.`.trim()));
+      } else {
+        wrap.appendChild(el('div', 'btx-cit-summary', `${data.total} citation${data.total === 1 ? '' : 's'} in ${fullName || ''} ${chapter}`.trim()));
+        for (const v of verses) {
+          const entries = data.byVerse[v];
+          if (!entries || !entries.length) continue;
 
-    bodyEl.appendChild(el('div', 'btx-cit-summary', `${data.total} citation${data.total === 1 ? '' : 's'} in ${fullName || ''} ${chapter}`.trim()));
+          // Verse-level dropdown, collapsed by default.
+          const vgroup = el('details', 'btx-cit-vgroup');
+          vgroup.appendChild(summaryRow('btx-cit-vhead', `${v}`, entries.length));
 
-    let focusEl = null;
-    for (const v of verses) {
-      const entries = data.byVerse[v];
-      if (!entries || !entries.length) continue;
+          // Bucket this verse's entries (already newest-first) by source type.
+          for (const g of GROUPS) {
+            const items = entries.filter((e) => g.corpora.includes((e.source || {}).c));
+            if (!items.length) continue;
+            const cgroup = el('details', 'btx-cit-cgroup');
+            cgroup.appendChild(summaryRow('btx-cit-chead', g.label, items.length));
+            for (const entry of items) cgroup.appendChild(entryRow(entry, onOpenTalk));
+            vgroup.appendChild(cgroup);
+          }
 
-      // Verse-level dropdown, collapsed by default.
-      const vgroup = el('details', 'btx-cit-vgroup');
-      vgroup.appendChild(summaryRow('btx-cit-vhead', `${v}`, entries.length));
-
-      // Bucket this verse's entries (already newest-first) by source type.
-      for (const g of GROUPS) {
-        const items = entries.filter((e) => g.corpora.includes((e.source || {}).c));
-        if (!items.length) continue;
-        const cgroup = el('details', 'btx-cit-cgroup');
-        cgroup.appendChild(summaryRow('btx-cit-chead', g.label, items.length));
-        for (const entry of items) cgroup.appendChild(entryRow(entry, onOpenTalk));
-        vgroup.appendChild(cgroup);
+          if (String(v) === String(focusVerse)) { vgroup.open = true; vgroup.classList.add('btx-cit-focus'); focusEl = vgroup; }
+          wrap.appendChild(vgroup);
+        }
       }
-
-      if (String(v) === String(focusVerse)) { vgroup.open = true; vgroup.classList.add('btx-cit-focus'); focusEl = vgroup; }
-      bodyEl.appendChild(vgroup);
     }
 
+    bodyEl.textContent = '';
+    bodyEl.appendChild(wrap);
     if (focusEl) requestAnimationFrame(() => { bodyEl.scrollTop = Math.max(0, focusEl.offsetTop - 50); });
+    return wrap;
   }
 
   root.__BTX = Object.assign(root.__BTX || {}, { citPanel: { render } });

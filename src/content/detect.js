@@ -34,19 +34,17 @@
     return usfm ? `${usfm}.${parsed.chapter}` : null;
   }
 
-  // Inject a tiny page-world script that re-dispatches history navigations.
+  // Inject a page-world script that re-dispatches history navigations. Loaded as a
+  // web-accessible file (allowed by the site CSP, which lists our extension origin)
+  // rather than inline (which the CSP blocks).
   function injectHistoryHook() {
     try {
       const script = document.createElement('script');
-      script.textContent =
-        '(function(){var f=function(t){var o=history[t];if(!o||o.__btx)return;' +
-        'var w=function(){var r=o.apply(this,arguments);' +
-        "window.dispatchEvent(new Event('btx:locationchange'));return r;};" +
-        'w.__btx=true;history[t]=w;};f("pushState");f("replaceState");})();';
+      script.src = chrome.runtime.getURL('src/content/page-hook.js');
+      script.onload = function () { script.remove(); };
       (document.head || document.documentElement).appendChild(script);
-      script.remove();
     } catch (e) {
-      // Blocked by CSP — the poll below still covers navigation.
+      // If blocked, the poll below still covers navigation.
     }
   }
 

@@ -101,9 +101,11 @@
     return `${base}${sep}id=${anchor}#${anchor}`;
   }
 
-  // Public: render a talk into `bodyEl`. opts: { entry, source, onBack }.
+  // Public: render a talk into `bodyEl`.
+  // opts: { entry, source, onBack, autoScroll }
   async function open(bodyEl, opts) {
     const { entry, source, onBack } = opts;
+    const autoScroll = opts.autoScroll !== false;
     bodyEl.textContent = '';
 
     const header = el('div', 'btx-talk-header');
@@ -117,7 +119,7 @@
     // Subtle "open full talk" link, top-right, for live General Conference.
     if (source.url) {
       const a = el('a', 'btx-talk-source', 'Open full talk ↗');
-      a.href = fullTalkUrl(source.url, entry.anchor);
+      a.href = autoScroll ? fullTalkUrl(source.url, entry.anchor) : source.url;
       a.target = '_blank'; a.rel = 'noopener';
       a.title = 'Open the full talk on churchofjesuschrist.org';
       header.appendChild(a);
@@ -156,8 +158,11 @@
     // Local highlights (saved on this machine, re-applied on reopen).
     try { highlights() && highlights().attach(article, entry.talkId); } catch (e) { /* non-fatal */ }
     // Defer scroll until layout settles. Scroll the panel body (the overflow
-    // container), not the inner .btx-talk-scroll wrapper.
-    requestAnimationFrame(() => scrollToCitation(article, bodyEl, { citId: entry.citId, anchor: live ? entry.anchor : null }));
+    // container), not the inner .btx-talk-scroll wrapper. Skipped when the user
+    // has turned off "open scrolled to the cited snippet".
+    if (autoScroll) {
+      requestAnimationFrame(() => scrollToCitation(article, bodyEl, { citId: entry.citId, anchor: live ? entry.anchor : null }));
+    }
   }
 
   root.__BTX = Object.assign(root.__BTX || {}, { talkView: { open, render } });

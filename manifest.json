@@ -33,7 +33,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/citations/data/*"],
+      "resources": ["src/citations/data/*", "src/content/page-hook.js"],
       "matches": ["https://www.churchofjesuschrist.org/*"]
     }
   ],

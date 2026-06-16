@@ -39,6 +39,25 @@
     return docBg && !/transparent/.test(docBg) ? docBg : 'rgb(255,255,255)';
   }
 
+  // Lighten (amt > 0) or darken (amt < 0) an rgb string toward white/black.
+  function shade(rgb, amt) {
+    const m = /(\d+)\D+(\d+)\D+(\d+)/.exec(rgb || '');
+    if (!m) return rgb;
+    const adj = (v) => Math.max(0, Math.min(255, Math.round(Number(v) + 255 * amt)));
+    return `rgb(${adj(m[1])}, ${adj(m[2])}, ${adj(m[3])})`;
+  }
+
+  // Color for the panel header bar: match the site's top toolbar when we can read
+  // it, otherwise derive a distinct shade from the page background.
+  function captureHeaderBg(bg, dark) {
+    const hdr = document.querySelector('header');
+    if (hdr) {
+      const c = getComputedStyle(hdr).backgroundColor;
+      if (c && !/rgba?\(0,\s*0,\s*0,\s*0\)|transparent/.test(c)) return c;
+    }
+    return shade(bg, dark ? 0.10 : -0.05);
+  }
+
   function luminance(rgb) {
     const m = /(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)/.exec(rgb || '');
     if (!m) return 1;
@@ -54,13 +73,15 @@
     const cs = getComputedStyle(reader);
     const bg = effectiveBackground(reader);
     const fg = cs.color || (luminance(bg) < 0.5 ? 'rgb(230,230,230)' : 'rgb(20,20,20)');
+    const dark = luminance(bg) < 0.5;
     return {
       bg,
       fg,
+      headerBg: captureHeaderBg(bg, dark),
       font: cs.fontFamily || 'Georgia, serif',
       size: cs.fontSize || '17px',
       line: cs.lineHeight && cs.lineHeight !== 'normal' ? cs.lineHeight : '1.6',
-      dark: luminance(bg) < 0.5,
+      dark,
     };
   }
 
@@ -69,6 +90,7 @@
     const v = vars || capture();
     targetEl.style.setProperty('--btx-bg', v.bg);
     targetEl.style.setProperty('--btx-fg', v.fg);
+    if (v.headerBg) targetEl.style.setProperty('--btx-header-bg', v.headerBg);
     targetEl.style.setProperty('--btx-font', v.font);
     targetEl.style.setProperty('--btx-size', v.size);
     targetEl.style.setProperty('--btx-line', v.line);

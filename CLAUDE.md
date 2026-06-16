@@ -49,7 +49,7 @@ Active branch: `claude/adoring-pasteur-vqa80n`.
 ```
 manifest.json              MV3 (v1.2.0); content_scripts order matters
 src/
-  shared/constants.js      __BTX.const  message types, storage keys, API bases, limits, defaultSettings (incl. sidebarWidth), isFreeVersion()
+  shared/constants.js      __BTX.const  message types, storage keys, API bases, limits, defaultSettings (sidebarWidth, scrollToSnippet, …), isFreeVersion()
   shared/books.js          __BTX.books  66 Bible (slug→USFM/name) + non-Bible registry (BoM/D&C/PGP); bookFullName, isScriptureCollection, isKnownBook
   background/
     service-worker.js      classic worker; importScripts shared+libs; onMessage router
@@ -58,7 +58,8 @@ src/
     ratelimit.js           __BTX.rate   15/30s window + 5000/day, persisted
   content/
     detect.js              __BTX.detect URL parse (all standard works + isBible flag) + SPA nav
-    theme.js               __BTX.theme  mirror site colors/fonts; resolveReadingContainer()
+    page-hook.js           page-world history patch, injected via web-accessible <script src> (CSP-safe)
+    theme.js               __BTX.theme  mirror site colors/fonts (+ headerBg); resolveReadingContainer()
     sanitize.js            __BTX.sanitize  IR → DOM (text nodes only)
     panel.js               __BTX.panel  panel DOM, states, mode toggle, scroll-sync, setWidth + drag-resize, setBibleMode
     panel.css
@@ -143,6 +144,16 @@ source-data/               GITIGNORED build input: core.53.db / content.53.db
   the heavy translation re-render (`sameExceptWidth` in `content.js`).
 - SPA navigation is debounced via `currentKey` in `content.js`; mode toggles re-render
   directly (bypassing that dedupe). Reset `currentKey = null` to force a re-render.
+- The citations view is cached (`citCache` in `content.js`) so toggling
+  Translation↔Citations preserves scroll + open dropdowns; invalidated on chapter
+  change / settings re-render. `cit-panel.render` returns the wrapper node it builds.
+- The history hook loads `page-hook.js` via `chrome.runtime.getURL` (the page CSP
+  allow-lists our extension origin in `script-src`), not an inline script — avoids
+  CSP violations and keeps instant nav detection; the 750ms poll is the fallback.
+- The panel pins to `top:0` and its header mirrors the site's sticky-toolbar grey
+  (`--btx-header-bg` from `theme.captureHeaderBg`, exact if a solid `<header>` bg
+  is readable, else a derived shade) so the title bar lines up with the site's icon
+  row. It stays put when the site header expands (it doesn't track it).
 - Commits here are unsigned (no signing key in the container) → GitHub shows
   "Unverified"; author email is `noreply@anthropic.com`. The git proxy port rotates
   and occasionally drops — retry pushes; clear any stale `remote.origin.pushurl`.

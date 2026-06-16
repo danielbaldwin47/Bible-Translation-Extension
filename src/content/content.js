@@ -31,6 +31,8 @@
   let currentKey = null; // dedupes repeat navigation events for the same chapter
   let mode = 'translation'; // user's preferred mode on Bible chapters
   let isBibleCurrent = true; // current page has translations (OT/NT)?
+  let scrollToSnippet = true; // open sources scrolled to the cited paragraph
+  let citCache = null; // { key, node, scrollTop } — preserves the citations view
 
   // On non-Bible books there's no translation, so Citations is forced.
   function effectiveMode() {
@@ -100,6 +102,7 @@
     const key = `${parsed.collection}/${parsed.ldsBook}/${parsed.chapter}/${parsed.lang}`;
     if (key === currentKey) return;
     currentKey = key;
+    citCache = null; // new chapter -> discard the cached citations view
     clearTimeout(retryTimer);
 
     panel.ensureRoot();
@@ -147,21 +150,43 @@
     await loadChapter();
   }
 
-  function renderCitations(parsed, focusVerse) {
-    return citPanel.render(panel.getBodyEl(), {
+  function citKey(parsed) {
+    return `${parsed.collection}/${parsed.ldsBook}/${parsed.chapter}`;
+  }
+
+  function saveCitScroll() {
+    if (citCache) citCache.scrollTop = panel.getBodyEl().scrollTop;
+  }
+
+  async function renderCitations(parsed, focusVerse) {
+    const body = panel.getBodyEl();
+    const key = citKey(parsed);
+    // Re-attach the cached view (keeps scroll + which dropdowns are open).
+    if (!focusVerse && citCache && citCache.key === key && citCache.node) {
+      body.textContent = '';
+      body.appendChild(citCache.node);
+      const top = citCache.scrollTop || 0;
+      body.scrollTop = top;
+      requestAnimationFrame(() => { body.scrollTop = top; });
+      return;
+    }
+    const node = await citPanel.render(body, {
       slug: parsed.ldsBook,
       chapter: parsed.chapter,
       fullName: BOOKS.bookFullName(parsed.ldsBook) || parsed.ldsBook,
       focusVerse,
       onOpenTalk: openTalk,
     });
+    citCache = { key, node, scrollTop: 0 };
   }
 
   function openTalk(entry) {
+    saveCitScroll(); // so "‹ Back" returns to the same spot in the list
     talkView.open(panel.getBodyEl(), {
       entry,
       source: entry.source || {},
       onBack: () => renderCitations(current),
+      autoScroll: scrollToSnippet,
     });
   }
 
@@ -283,6 +308,7 @@
       onModeChange: (m) => {
         if (!isBibleCurrent) return; // toggle hidden on non-Bible books
         if (m === mode) return;
+        if (effectiveMode() === 'citations') saveCitScroll(); // remember position
         mode = m;
         storeMode();
         panel.setMode(m);
@@ -294,6 +320,7 @@
     mode = (await getStored(MODE_KEY)) === 'citations' ? 'citations' : 'translation';
     const initSettings = await getSyncSettings();
     if (initSettings.sidebarWidth) applyWidth(initSettings.sidebarWidth);
+    scrollToSnippet = initSettings.scrollToSnippet !== false;
 
     detect.setupNavigation(() => render());
 
@@ -308,6 +335,7 @@
         const nv = changes[C.SETTINGS_KEY].newValue || {};
         const ov = changes[C.SETTINGS_KEY].oldValue || {};
         if (nv.sidebarWidth !== ov.sidebarWidth) applyWidth(nv.sidebarWidth);
+        scrollToSnippet = nv.scrollToSnippet !== false;
         if (sameExceptWidth(ov, nv)) return;
         enabled = null;
         currentKey = null; // force a re-render with the new settings
