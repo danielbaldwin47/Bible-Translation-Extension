@@ -17,6 +17,7 @@
   const KEY = (talkId) => `btxHl::${talkId}`;
 
   let menuEl = null;        // shared floating action button
+  let menuMode = null;      // 'select' | 'remove' — guards onSelectUp from hiding
   let activeContainer = null;
   let activeTalkId = null;
   let docBound = false;
@@ -123,9 +124,10 @@
     return menuEl;
   }
 
-  function hideMenu() { if (menuEl) menuEl.style.display = 'none'; }
+  function hideMenu() { if (menuEl) menuEl.style.display = 'none'; menuMode = null; }
 
-  function showMenuAt(rect, label, onClick) {
+  function showMenuAt(rect, label, onClick, mode) {
+    menuMode = mode || 'select';
     const m = ensureMenu();
     m.textContent = '';
     const btn = document.createElement('button');
@@ -188,13 +190,16 @@
   // ---- event handlers ----
   function onSelectUp() {
     setTimeout(() => {
+      // A click on a highlight (collapsed selection) opens the remove menu via the
+      // later 'click' event — don't let this deferred check tear it down.
+      if (menuMode === 'remove') return;
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.rangeCount) { hideMenu(); return; }
       const range = sel.getRangeAt(0);
       if (!activeContainer || !activeContainer.contains(range.commonAncestorContainer)) { hideMenu(); return; }
       const rect = range.getBoundingClientRect();
       if (!rect || (!rect.width && !rect.height)) { hideMenu(); return; }
-      showMenuAt(rect, '✎ Highlight', createFromSelection);
+      showMenuAt(rect, '✎ Highlight', createFromSelection, 'select');
     }, 0);
   }
 
@@ -203,7 +208,7 @@
     if (!span) return;
     e.stopPropagation();
     const hlId = span.getAttribute('data-hl-id');
-    showMenuAt(span.getBoundingClientRect(), '✕ Remove highlight', () => removeHighlight(hlId));
+    showMenuAt(span.getBoundingClientRect(), '✕ Remove highlight', () => removeHighlight(hlId), 'remove');
   }
 
   function onDocDown(e) {

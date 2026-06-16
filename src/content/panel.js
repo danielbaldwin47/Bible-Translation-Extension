@@ -81,6 +81,7 @@
     if (!existing) {
       rootEl.style.display = 'none'; // stay hidden until render() decides visibility
       document.body.appendChild(rootEl);
+      window.addEventListener('resize', updatePageReserve, { passive: true });
     }
 
     // Wire controls.
@@ -101,9 +102,24 @@
     Object.assign(cbs, handlers);
   }
 
+  // Reserve right-edge page space equal to the (expanded) panel width by adding a
+  // margin to <html>, so the site's own right-docked UI (e.g. the footnote panel)
+  // lays out to the LEFT of our panel instead of being hidden behind it. Our panel
+  // is position:fixed, so it's unaffected by this margin.
+  function updatePageReserve() {
+    if (!ui) return;
+    // On narrow viewports the panel is a full-width bottom sheet — never reserve
+    // horizontal space there (it would push the page off-screen).
+    const narrow = window.matchMedia && window.matchMedia('(max-width: 700px)').matches;
+    const visible = ui.rootEl.style.display !== 'none';
+    const reserve = !narrow && visible && !isCollapsed() ? ui.rootEl.getBoundingClientRect().width : 0;
+    try { document.documentElement.style.marginRight = reserve ? reserve + 'px' : ''; } catch (e) { /* ignore */ }
+  }
+
   function setVisible(visible) {
     ensureRoot();
     ui.rootEl.style.display = visible ? '' : 'none';
+    updatePageReserve();
   }
 
   function setCollapsed(collapsed) {
@@ -111,6 +127,7 @@
     ui.rootEl.classList.toggle('btx-collapsed', collapsed);
     if (collapsed) detachScrollSync();
     else attachScrollSync();
+    updatePageReserve();
   }
 
   function isCollapsed() {
@@ -241,6 +258,7 @@
   function setWidth(px) {
     ensureRoot();
     ui.rootEl.style.setProperty('--btx-width', clampWidth(px) + 'px');
+    updatePageReserve();
   }
 
   function widthFromEvent(e) {

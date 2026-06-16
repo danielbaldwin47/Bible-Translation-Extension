@@ -85,6 +85,15 @@
   border-radius: 10px;
   padding: 1px 7px;
 }
+/* Verse-level count: subtle, fixed-width, grey (no fill) so 1/2-digit counts
+   don't jitter and don't compete with the verse number for attention. */
+#btx-root summary.btx-cit-vhead .btx-cit-count {
+  background: transparent;
+  color: var(--btx-muted);
+  min-width: 2.2ch;
+  text-align: center;
+  padding: 0;
+}
 
 /* Source-type sub-dropdown inside a verse */
 #btx-root .btx-cit-cgroup { border-top: 1px solid var(--btx-border); }
@@ -92,7 +101,7 @@
   padding: 6px 10px 6px 16px;
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--btx-muted);
+  color: var(--btx-fg);
 }
 #btx-root summary.btx-cit-chead:hover { background: var(--btx-border); }
 #btx-root summary.btx-cit-chead .btx-cit-count { background: var(--btx-muted); }

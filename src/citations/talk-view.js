@@ -80,13 +80,26 @@
     }
     if (!target) return;
     target.classList.add('btx-cit-highlight');
-    // Scroll within the panel body.
-    const top = target.offsetTop - 60;
-    if (scrollEl) scrollEl.scrollTop = Math.max(0, top);
-    else target.scrollIntoView({ block: 'center' });
+    // Scroll the real overflow container (.btx-body) to the target. offsetTop is
+    // relative to the fixed #btx-root, so use a viewport-rect delta instead.
+    if (scrollEl) {
+      const delta = target.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top;
+      scrollEl.scrollTop = Math.max(0, scrollEl.scrollTop + delta - 16);
+    } else {
+      target.scrollIntoView({ block: 'start' });
+    }
   }
 
   function cssId(s) { return String(s).replace(/["\\]/g, '\\$&'); }
+
+  // Deep-link to a live church talk paragraph: "...&id=pN#pN" scrolls to and
+  // highlights that paragraph on churchofjesuschrist.org.
+  function fullTalkUrl(url, anchor) {
+    if (!anchor) return url;
+    const base = String(url).split('#')[0];
+    const sep = base.indexOf('?') >= 0 ? '&' : '?';
+    return `${base}${sep}id=${anchor}#${anchor}`;
+  }
 
   // Public: render a talk into `bodyEl`. opts: { entry, source, onBack }.
   async function open(bodyEl, opts) {
@@ -104,7 +117,7 @@
     // Subtle "open full talk" link, top-right, for live General Conference.
     if (source.url) {
       const a = el('a', 'btx-talk-source', 'Open full talk ↗');
-      a.href = source.url + (entry.anchor ? '#' + entry.anchor : '');
+      a.href = fullTalkUrl(source.url, entry.anchor);
       a.target = '_blank'; a.rel = 'noopener';
       a.title = 'Open the full talk on churchofjesuschrist.org';
       header.appendChild(a);
@@ -142,8 +155,9 @@
     body.appendChild(article);
     // Local highlights (saved on this machine, re-applied on reopen).
     try { highlights() && highlights().attach(article, entry.talkId); } catch (e) { /* non-fatal */ }
-    // Defer scroll until layout settles.
-    requestAnimationFrame(() => scrollToCitation(article, body, { citId: entry.citId, anchor: live ? entry.anchor : null }));
+    // Defer scroll until layout settles. Scroll the panel body (the overflow
+    // container), not the inner .btx-talk-scroll wrapper.
+    requestAnimationFrame(() => scrollToCitation(article, bodyEl, { citId: entry.citId, anchor: live ? entry.anchor : null }));
   }
 
   root.__BTX = Object.assign(root.__BTX || {}, { talkView: { open, render } });

@@ -231,7 +231,9 @@
   color: #fff;
   border: none;
   padding: 12px 6px;
-  border-radius: 8px 0 0 8px;
+  /* Tab is rotated 180°, so rounding the coded right corners makes the visual
+     left side rounded — the window-edge side stays flush. */
+  border-radius: 0 8px 8px 0;
   font-family: inherit;
   font-size: 13px;
   letter-spacing: 0.04em;

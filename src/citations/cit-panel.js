@@ -10,7 +10,7 @@
 
   const citData = () => root.__BTX.citData;
 
-  const CORPUS_TAG = { G: 'GC', E: 'GC', J: 'JoD', T: 'TPJS' };
+  const CORPUS_TAG = { G: 'GC', E: 'GC', J: 'JoD', T: 'JS' };
 
   // Source-type buckets shown as sub-dropdowns under each verse, in this order.
   // Each talk keeps its own CORPUS_TAG; E and G both count as General Conference.
@@ -36,6 +36,17 @@
     return sum;
   }
 
+  // Shorten the source label by dropping the part that the dropdown + tag already
+  // convey (e.g. "October 2025 General Conference" -> "October 2025").
+  function shortLabel(s) {
+    const lbl = s.lbl || '';
+    let out = lbl;
+    if (s.c === 'G' || s.c === 'E') out = lbl.replace(/\s*General Conference\s*$/i, '').trim();
+    else if (s.c === 'J') out = lbl.replace(/^Journal of Discourses\s*/i, '').trim();
+    else if (s.c === 'T') out = lbl.replace(/^Teachings of the Prophet Joseph Smith,?\s*/i, '').trim();
+    return out || s.d || '';
+  }
+
   function entryRow(entry, onOpenTalk) {
     const s = entry.source || {};
     const row = el('div', 'btx-cit');
@@ -43,7 +54,7 @@
     head.appendChild(el('span', 'btx-cit-speaker', s.sp || 'Unknown'));
     head.appendChild(el('span', `btx-cit-tag btx-tag-${s.c || 'G'}`, CORPUS_TAG[s.c] || 'GC'));
     row.appendChild(head);
-    const sub = [s.ti, s.lbl || s.d].filter(Boolean).join(' · ');
+    const sub = [s.ti, shortLabel(s)].filter(Boolean).join(' · ');
     if (sub) row.appendChild(el('div', 'btx-cit-sub', sub));
     if (entry.snippet) row.appendChild(el('div', 'btx-cit-snippet', '“' + entry.snippet + '”'));
     row.tabIndex = 0;
@@ -83,7 +94,7 @@
 
       // Verse-level dropdown, collapsed by default.
       const vgroup = el('details', 'btx-cit-vgroup');
-      vgroup.appendChild(summaryRow('btx-cit-vhead', `Verse ${v}`, entries.length));
+      vgroup.appendChild(summaryRow('btx-cit-vhead', `${v}`, entries.length));
 
       // Bucket this verse's entries (already newest-first) by source type.
       for (const g of GROUPS) {
