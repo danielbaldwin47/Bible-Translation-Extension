@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Bible Translation Side-by-Side",
+  "version": "1.0.0",
+  "description": "Shows the same Bible chapter in other translations (NRSV, NIV, NKJV, KJV, …) in a side panel that blends into the Gospel Library reader.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://api.scripture.api.bible/*",
+    "https://bible-api.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.churchofjesuschrist.org/study/*"],
+      "js": [
+        "src/shared/constants.js",
+        "src/shared/books.js",
+        "src/content/sanitize.js",
+        "src/content/theme.js",
+        "src/content/detect.js",
+        "src/content/panel.js",
+        "src/content/content.js"
+      ],
+      "css": ["src/content/panel.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_ui": {
+    "page": "src/options/options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "Toggle Bible translation panel"
+  }
+}
