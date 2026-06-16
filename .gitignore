@@ -1,0 +1,9 @@
+# Large source databases for the citation-index build. These are NOT shipped with
+# the extension (only the generated src/citations/data/ is). They remain in git
+# history via LFS at the commit that added them ("Add BYU citation index
+# databases"); retrieve with, e.g.:
+#   git checkout <that-commit> -- core.53.db content.53.db && mkdir -p source-data && mv core.53.db content.53.db source-data/
+# or place your own copies in source-data/ to rebuild.
+/source-data/
+/core.53.db
+/content.53.db

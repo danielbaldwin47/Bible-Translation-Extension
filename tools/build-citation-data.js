@@ -6,13 +6,17 @@
  * compact, web-fetchable dataset under src/citations/data/. Only Bible (OT/NT)
  * citations are emitted, since the extension activates on Bible chapters.
  *
+ * The two app DBs are not shipped; place them in ./source-data/ (gitignored) —
+ * which is the default location below. They also live in git/LFS history at the
+ * commit that added them.
+ *
  * Run (Node 22+, built-in SQLite + zlib — no npm install):
- *   node --experimental-sqlite tools/build-citation-data.js \
- *     --core ./core_53.db --content ./content_53.db --out ./src/citations/data
+ *   node --experimental-sqlite tools/build-citation-data.js
+ *   (defaults: --core ./source-data/core.53.db --content ./source-data/content.53.db --out ./src/citations/data)
  *
  * Inspect the raw DBs first (recommended before a full build) to confirm the
  * real talk.URL formats and talk HTML markup:
- *   node --experimental-sqlite tools/build-citation-data.js --core ./core_53.db --content ./content_53.db --inspect
+ *   node --experimental-sqlite tools/build-citation-data.js --inspect
  *
  * Output layout:
  *   data/index.json            { builtAt, dbUpdated, books:[{slug,fullName,bookId,citations}], counts }
@@ -33,8 +37,8 @@ function arg(name, def) {
   const i = process.argv.indexOf(name);
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : def;
 }
-const CORE = arg('--core', './core_53.db');
-const CONTENT = arg('--content', './content_53.db');
+const CORE = arg('--core', path.resolve(__dirname, '..', 'source-data', 'core.53.db'));
+const CONTENT = arg('--content', path.resolve(__dirname, '..', 'source-data', 'content.53.db'));
 const OUT = arg('--out', path.resolve(__dirname, '..', 'src', 'citations', 'data'));
 const INSPECT = process.argv.includes('--inspect');
 

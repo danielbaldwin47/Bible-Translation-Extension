@@ -33,10 +33,15 @@ Index" app databases (`core.53.db`, `content.53.db`), processed by
 `tools/build-citation-data.js` into the compact, web-fetchable bundle under
 `src/citations/data/`. This is for **personal study only** (BYU/Church content is
 not redistributable — another reason this stays a load-unpacked extension, not a
-Web Store listing). To regenerate after updating the app DBs:
+Web Store listing).
+
+The raw app DBs are **not shipped** (they'd bloat the unpacked extension by ~100 MB
+and aren't used at runtime). They live in git/LFS history at the commit that added
+them, and are expected in the gitignored `source-data/` folder for rebuilds:
 
 ```
-node --experimental-sqlite tools/build-citation-data.js --core ./core.53.db --content ./content.53.db
+mkdir -p source-data        # then put core.53.db / content.53.db here
+node --experimental-sqlite tools/build-citation-data.js   # reads source-data/ by default
 node tools/validate-citations.js
 ```
 
