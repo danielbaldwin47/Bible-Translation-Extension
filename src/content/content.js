@@ -15,8 +15,12 @@
   const detect = root.__BTX.detect;
   const theme = root.__BTX.theme;
   const panel = root.__BTX.panel;
+  const citPanel = root.__BTX.citPanel;
+  const talkView = root.__BTX.talkView;
+  const verseBadges = root.__BTX.verseBadges;
 
   const SELECTION_KEY = 'btxSelectedTranslation';
+  const MODE_KEY = 'btxPanelMode';
 
   let enabled = null; // { translations, defaultId, provider, hasKey }
   let selectedId = null;
@@ -26,6 +30,14 @@
   let userClosed = false;
   let themeDisconnect = null;
   let currentKey = null; // dedupes repeat navigation events for the same chapter
+  let mode = 'translation'; // 'translation' | 'citations'
+
+  function getStored(key) {
+    return new Promise((resolve) => {
+      try { chrome.storage.local.get(key, (d) => resolve(d && d[key])); } catch (e) { resolve(undefined); }
+    });
+  }
+  function storeMode() { try { chrome.storage.local.set({ [MODE_KEY]: mode }); } catch (e) { /* ignore */ } }
 
   function send(message) {
     return new Promise((resolve) => {
@@ -63,15 +75,6 @@
     return enabled;
   }
 
-  function getStoredSelection() {
-    return new Promise((resolve) => {
-      try {
-        chrome.storage.local.get(SELECTION_KEY, (d) => resolve(d && d[SELECTION_KEY]));
-      } catch (e) {
-        resolve(null);
-      }
-    });
-  }
   function storeSelection(id) {
     try { chrome.storage.local.set({ [SELECTION_KEY]: id }); } catch (e) { /* ignore */ }
   }
@@ -82,13 +85,13 @@
 
     if (!parsed) {
       panel.setVisible(false);
+      verseBadges.clear();
       currentKey = null;
       return;
     }
 
-    // Skip spurious events (e.g. verse-anchor hashchange) for the same chapter,
-    // so we don't refetch or reset the panel scroll. Callers that need a forced
-    // re-render (settings change, toolbar toggle) reset currentKey first.
+    // Skip spurious events (e.g. verse-anchor hashchange) for the same chapter.
+    // Mode toggles re-render directly (see renderActiveMode), bypassing this.
     const key = `${parsed.collection}/${parsed.ldsBook}/${parsed.chapter}/${parsed.lang}`;
     if (key === currentKey) return;
     currentKey = key;
@@ -105,28 +108,66 @@
     // Respect the "English pages only" preference.
     if (e.actOnNonEngOnly !== false && parsed.lang !== 'eng') {
       panel.setVisible(false);
+      verseBadges.clear();
       return;
     }
 
     panel.setVisible(true);
     applyTheme();
     panel.setTitle(refLabel(parsed));
+    panel.setMode(mode);
 
+    // Per-verse citation badges show in either mode.
+    updateBadges(parsed);
+
+    await renderActiveMode();
+  }
+
+  function renderActiveMode() {
+    if (!current) return undefined;
+    return mode === 'citations' ? renderCitations(current) : renderTranslation();
+  }
+
+  async function renderTranslation() {
+    const e = await loadEnabled();
     const list = e.translations || [];
-
     if (!list.length) {
       panel.populateTranslations([], '');
       if (e.provider === C.PROVIDER_APIBIBLE && !e.hasKey) panel.renderNoKey();
       else panel.renderError('No translations enabled yet. Open settings (⚙) to choose.', { retry: false });
       return;
     }
-
     if (!selectedId || !findTranslation(selectedId)) {
-      const stored = await getStoredSelection();
+      const stored = await getStored(SELECTION_KEY);
       selectedId = (findTranslation(stored) && stored) || (findTranslation(e.defaultId) && e.defaultId) || list[0].id;
     }
     panel.populateTranslations(list, selectedId);
     await loadChapter();
+  }
+
+  function updateBadges(parsed) {
+    verseBadges.update(parsed.ldsBook, parsed.chapter, (verse) => {
+      if (mode !== 'citations') { mode = 'citations'; storeMode(); panel.setMode('citations'); }
+      renderCitations(current, verse);
+    });
+  }
+
+  function renderCitations(parsed, focusVerse) {
+    return citPanel.render(panel.getBodyEl(), {
+      slug: parsed.ldsBook,
+      chapter: parsed.chapter,
+      fullName: BOOKS.ldsToBibleApi(parsed.ldsBook) || parsed.ldsBook,
+      focusVerse,
+      onOpenTalk: openTalk,
+    });
+  }
+
+  function openTalk(entry) {
+    talkView.open(panel.getBodyEl(), {
+      entry,
+      source: entry.source || {},
+      onBack: () => renderCitations(current),
+    });
   }
 
   async function loadChapter() {
@@ -209,17 +250,26 @@
   }
 
   // ---- Wire up ----
-  function init() {
+  async function init() {
     panel.setHandlers({
       onTranslationChange: (id) => {
         selectedId = id;
         storeSelection(id);
-        loadChapter();
+        if (mode === 'translation') loadChapter();
       },
       onRetry: () => loadChapter(),
       onGear: () => send({ type: C.MSG.OPEN_OPTIONS }),
       onClose: () => { userClosed = true; panel.setVisible(false); },
+      onModeChange: (m) => {
+        if (m === mode) return;
+        mode = m;
+        storeMode();
+        panel.setMode(m);
+        renderActiveMode();
+      },
     });
+
+    mode = (await getStored(MODE_KEY)) === 'citations' ? 'citations' : 'translation';
 
     detect.setupNavigation(() => render());
 

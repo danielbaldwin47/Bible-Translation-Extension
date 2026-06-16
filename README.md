@@ -1,24 +1,44 @@
-# Bible Translation Side-by-Side
+# Bible Translation Side-by-Side + Scripture Citation Index
 
-A Chrome extension that shows the **same Bible chapter in other translations**
-(NRSV, NIV, NKJV, KJV, …) in a side panel while you read on
-[churchofjesuschrist.org/study](https://www.churchofjesuschrist.org/study).
+A Chrome study extension for [churchofjesuschrist.org/study](https://www.churchofjesuschrist.org/study)
+that, while you read a Bible chapter, shows (1) the **same chapter in other
+translations** (NRSV, NIV, NKJV, KJV, …) and (2) every **General Conference talk,
+Journal of Discourses sermon, and Teaching of Joseph Smith that cites each verse**
+— all in a side panel that blends into the Gospel Library reader.
 
-The panel blends into the Gospel Library reader: it mirrors the site's
-light/dark/sepia theme, font, and text size, follows you as you navigate between
-chapters, and scrolls along with the page.
+The panel mirrors the site's light/dark/sepia theme, font, and text size, follows
+you as you navigate between chapters, and scrolls along with the page.
 
 ## Features
 
-- **Auto-detects the chapter** you're reading (Old & New Testament) and loads the
-  matching chapter in your chosen translation.
-- **Right-side panel**, one translation at a time, switchable from a dropdown.
+- **Two modes** in one panel, toggled in the header: **Translation** and **Citations**.
+- **Translation** — auto-detects the chapter and loads it in your chosen version;
+  one at a time, switchable from a dropdown; scrolls proportionally with the page.
+- **Citations** — for the current chapter, lists the talks/sermons that cite each
+  verse (grouped by verse, newest first, with a context snippet). Per-verse count
+  **badges** also appear in the Church's text; click one to jump to that verse.
+- **Open sources inline** — clicking a citation opens the talk in the panel,
+  scrolled to the cited paragraph: modern General Conference is fetched live from
+  churchofjesuschrist.org; Journal of Discourses / pre-1971 conference / Joseph
+  Smith come from bundled offline text.
 - **Blends in** — copies the site's resolved colors/fonts via CSS variables, so it
   tracks theme and font-size changes live (no dependence on the site's class names).
-- **Synced scrolling** — the panel scrolls proportionally with the main page.
-- **Caching + rate-limit handling** so re-reading a chapter is instant and stays
-  within the api.bible free-tier limits.
-- No build step — plain Manifest V3, load it unpacked.
+- **Caching + rate-limit handling** for translations; citation data is local.
+- No build step for the extension — plain Manifest V3, load it unpacked.
+
+## Scripture Citation Index data
+
+The citation feature is powered by data extracted from the BYU "Scripture Citation
+Index" app databases (`core.53.db`, `content.53.db`), processed by
+`tools/build-citation-data.js` into the compact, web-fetchable bundle under
+`src/citations/data/`. This is for **personal study only** (BYU/Church content is
+not redistributable — another reason this stays a load-unpacked extension, not a
+Web Store listing). To regenerate after updating the app DBs:
+
+```
+node --experimental-sqlite tools/build-citation-data.js --core ./core.53.db --content ./content.53.db
+node tools/validate-citations.js
+```
 
 ## Translation sources
 

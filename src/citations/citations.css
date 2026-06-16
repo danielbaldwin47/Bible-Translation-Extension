@@ -1,0 +1,133 @@
+/*
+ * Citation-index styles. Panel-scoped rules live under #btx-root and reuse the
+ * theme variables set by panel.css/theme.js. The per-verse badge lives in the
+ * Church's own DOM (outside #btx-root), so it is styled standalone.
+ */
+
+/* ---- Mode toggle ---- */
+#btx-root .btx-modes {
+  display: flex;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--btx-border);
+  flex: 0 0 auto;
+}
+#btx-root .btx-mode {
+  flex: 1;
+  appearance: none;
+  border: 1px solid var(--btx-border);
+  background: transparent;
+  color: var(--btx-muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+#btx-root .btx-mode.btx-active {
+  background: var(--btx-accent);
+  border-color: var(--btx-accent);
+  color: #fff;
+}
+
+/* ---- Citation list ---- */
+#btx-root .btx-cit-summary {
+  font-size: 12px;
+  color: var(--btx-muted);
+  margin-bottom: 10px;
+}
+#btx-root .btx-cit-group { margin-bottom: 16px; }
+#btx-root .btx-cit-group.btx-cit-focus { outline: 2px solid var(--btx-accent); border-radius: 8px; padding: 6px; margin: -6px -6px 10px; }
+#btx-root .btx-cit-vhead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--btx-border);
+  padding-bottom: 3px;
+  margin-bottom: 6px;
+}
+#btx-root .btx-cit-vnum { font-weight: 700; font-size: 13px; }
+#btx-root .btx-cit-vcount { font-size: 11px; color: var(--btx-muted); }
+
+#btx-root .btx-cit {
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+#btx-root .btx-cit:hover { background: var(--btx-border); }
+#btx-root .btx-cit:focus-visible { outline: 2px solid var(--btx-accent); }
+#btx-root .btx-cit-head { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
+#btx-root .btx-cit-speaker { font-weight: 600; font-size: 13.5px; }
+#btx-root .btx-cit-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 10px;
+  color: #fff;
+  flex: 0 0 auto;
+}
+#btx-root .btx-tag-G, #btx-root .btx-tag-E { background: #006184; }
+#btx-root .btx-tag-J { background: #7a5230; }
+#btx-root .btx-tag-T { background: #4a5d23; }
+#btx-root .btx-cit-sub { font-size: 12px; color: var(--btx-muted); margin-top: 1px; }
+#btx-root .btx-cit-snippet { font-size: 12.5px; margin-top: 4px; opacity: 0.9; font-style: italic; }
+
+/* ---- Inline talk reader ---- */
+#btx-root .btx-talk-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--btx-border);
+  padding-bottom: 8px;
+}
+#btx-root .btx-talk-back {
+  flex: 0 0 auto;
+  border: 1px solid var(--btx-border);
+  background: transparent;
+  color: var(--btx-fg);
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+#btx-root .btx-talk-back:hover { background: var(--btx-border); }
+#btx-root .btx-talk-title { font-weight: 700; font-size: 14px; }
+#btx-root .btx-talk-sub { font-size: 12px; color: var(--btx-muted); }
+#btx-root .btx-talk { font-size: var(--btx-size); line-height: var(--btx-line); }
+#btx-root .btx-talk p { margin: 0 0 0.7em; }
+#btx-root .btx-talk h1, #btx-root .btx-talk h2, #btx-root .btx-talk h3 { font-size: 1em; font-weight: 700; margin: 1em 0 0.4em; }
+#btx-root .btx-cit-highlight {
+  background: color-mix(in srgb, var(--btx-accent) 22%, transparent);
+  border-radius: 4px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--btx-accent) 22%, transparent);
+}
+#btx-root .btx-talk-source { display: inline-block; margin-top: 12px; color: var(--btx-accent); font-size: 13px; }
+
+/* ---- Per-verse badge (lives in the Church DOM) ---- */
+.btx-verse-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-right: 5px;
+  border: none;
+  border-radius: 9px;
+  background: #006184;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  vertical-align: middle;
+  cursor: pointer;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+.btx-verse-badge:hover { filter: brightness(1.12); }
+@media (prefers-color-scheme: dark) {
+  .btx-verse-badge { background: #2a8bb0; }
+}

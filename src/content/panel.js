@@ -52,10 +52,18 @@
     header.appendChild(title);
     header.appendChild(controls);
 
+    // Mode toggle: Translation | Citations
+    const modes = el('div', 'btx-modes');
+    const modeTranslation = el('button', 'btx-mode btx-active', 'Translation');
+    const modeCitations = el('button', 'btx-mode', 'Citations');
+    modes.appendChild(modeTranslation);
+    modes.appendChild(modeCitations);
+
     const body = el('div', 'btx-body');
     const footer = el('div', 'btx-footer');
 
     panel.appendChild(header);
+    panel.appendChild(modes);
     panel.appendChild(body);
     panel.appendChild(footer);
 
@@ -73,8 +81,10 @@
     collapse.addEventListener('click', () => setCollapsed(true));
     close.addEventListener('click', () => cbs.onClose && cbs.onClose());
     tab.addEventListener('click', () => setCollapsed(false));
+    modeTranslation.addEventListener('click', () => cbs.onModeChange && cbs.onModeChange('translation'));
+    modeCitations.addEventListener('click', () => cbs.onModeChange && cbs.onModeChange('citations'));
 
-    ui = { rootEl, panel, header, title, select, body, footer, tab };
+    ui = { rootEl, panel, header, title, select, modes, modeTranslation, modeCitations, body, footer, tab };
     return ui;
   }
 
@@ -208,11 +218,29 @@
     return ui.rootEl;
   }
 
+  function getBodyEl() {
+    ensureRoot();
+    return ui.body;
+  }
+
+  // Switch the panel between 'translation' and 'citations'. Citations mode hides
+  // the translation dropdown + copyright footer and disables verse scroll-sync.
+  function setMode(mode) {
+    ensureRoot();
+    const cit = mode === 'citations';
+    ui.modeTranslation.classList.toggle('btx-active', !cit);
+    ui.modeCitations.classList.toggle('btx-active', cit);
+    ui.select.style.display = cit ? 'none' : '';
+    ui.footer.style.display = cit ? 'none' : '';
+    ui.rootEl.setAttribute('data-btx-mode', mode);
+    if (cit) detachScrollSync();
+  }
+
   root.__BTX = Object.assign(root.__BTX || {}, {
     panel: {
       ensureRoot, setHandlers, setVisible, setCollapsed, isCollapsed, setTitle,
       populateTranslations, renderLoading, renderNoKey, renderError, renderContent,
-      getRootEl,
+      getRootEl, getBodyEl, setMode,
     },
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

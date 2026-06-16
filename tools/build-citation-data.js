@@ -77,20 +77,23 @@ function openDb(file) {
 // Build LDS slug -> book.ID for OT/NT, matching on FullName (KJV names) with
 // Abbr / overrides as fallback. Reuses LDS_TO_BIBLEAPI (slug -> full name).
 function buildBookMap(core) {
+  // The DB's book.Abbr equals our LDS slug (after normalizing spaces→hyphens,
+  // e.g. '1 sam' → '1-sam'); FullName is a fallback. Display name comes from our
+  // clean LDS_TO_BIBLEAPI map (DB FullName has forms like "The Acts").
+  const mySlugs = new Set(Object.keys(BOOKS.LDS_TO_USFM));
   const nameToSlug = {};
-  for (const [slug, full] of Object.entries(BOOKS.LDS_TO_BIBLEAPI)) {
-    nameToSlug[full.toLowerCase()] = slug;
-  }
-  // Known alternate spellings between the DB and our names, if any.
-  const OVERRIDES = { 'song of songs': 'song' };
+  for (const [slug, full] of Object.entries(BOOKS.LDS_TO_BIBLEAPI)) nameToSlug[full.toLowerCase()] = slug;
+
   const rows = core.prepare('SELECT ID, Abbr, FullName, ParentBookID FROM book').all();
   const map = {}; // slug -> { bookId, fullName }
   const unmatched = [];
   for (const r of rows) {
     if (!BIBLE_VOLUMES.has(r.ParentBookID)) continue; // only OT/NT child books
-    const fn = String(r.FullName || '').toLowerCase().trim();
-    const slug = nameToSlug[fn] || OVERRIDES[fn] || null;
-    if (slug) map[slug] = { bookId: r.ID, fullName: r.FullName };
+    const norm = String(r.Abbr || '').toLowerCase().trim().replace(/\s+/g, '-');
+    const slug = mySlugs.has(r.Abbr) ? r.Abbr
+      : mySlugs.has(norm) ? norm
+      : nameToSlug[String(r.FullName || '').toLowerCase().trim()] || null;
+    if (slug) map[slug] = { bookId: r.ID, fullName: BOOKS.LDS_TO_BIBLEAPI[slug] || r.FullName };
     else unmatched.push(`${r.ID}:${r.FullName} (Abbr=${r.Abbr})`);
   }
   if (unmatched.length) {
@@ -102,16 +105,41 @@ function buildBookMap(core) {
 // ---- corpus-specific bits (validate against --inspect output) ----
 
 // Transform the stored talk.URL into a same-origin churchofjesuschrist.org study
-// URL for modern General Conference (corpus G). Returns null if not derivable.
+// URL. Modern GC already stores the full church URL; older GC stores lds.org
+// ensign paths. Returns null if not derivable (then the talk is bundled).
 function toChurchUrl(url) {
   if (!url) return null;
-  // Old lds.org / churchofjesuschrist.org general-conference paths:
-  // .../general-conference/{year}/{mo}/{slug}  ->  /study/general-conference/{year}/{mo}/{slug}
-  const m = /general-conference\/(\d{4})\/(\d{2})\/([a-z0-9-]+)/i.exec(url);
-  if (m) {
-    return `https://www.churchofjesuschrist.org/study/general-conference/${m[1]}/${m[2]}/${m[3]}?lang=eng`;
+  let u = String(url).trim();
+  if (/churchofjesuschrist\.org\/study\//i.test(u)) {
+    return u.replace(/^http:/, 'https:');
   }
+  // http(s)://lds.org/{path}  ->  https://www.churchofjesuschrist.org/study/{path}
+  const m = /^https?:\/\/(?:www\.)?lds\.org\/(.+)$/i.exec(u);
+  if (m) return `https://www.churchofjesuschrist.org/study/${m[1]}`;
   return null;
+}
+
+// Locate a citation in the talk HTML by its citation.ID (the app marks each as
+// <span class="citation" id="{citId}">…</span>), return the enclosing block's
+// text as a snippet and, for modern GC, the paragraph anchor (e.g. "p21").
+function extractCitation(html, citId) {
+  if (!html) return { snippet: '', anchor: '' };
+  const marker = `<span class="citation" id="${citId}"`;
+  const i = html.indexOf(marker);
+  if (i < 0) return { snippet: '', anchor: '' };
+  // Enclosing block = nearest <p ...> or <div ...> opening before the span.
+  const blockStart = Math.max(html.lastIndexOf('<p', i), html.lastIndexOf('<div', i), 0);
+  const pEnd = html.indexOf('</p>', i);
+  const dEnd = html.indexOf('</div>', i);
+  let blockEnd = Math.min(pEnd < 0 ? Infinity : pEnd, dEnd < 0 ? Infinity : dEnd);
+  if (!isFinite(blockEnd)) blockEnd = Math.min(html.length, i + 500);
+  const block = html.slice(blockStart, blockEnd);
+  let anchor = '';
+  const uriM = /uri="[^"]*?\.(p\d+)"/.exec(block);
+  if (uriM) anchor = uriM[1];
+  let snippet = stripTags(block);
+  if (snippet.length > 220) snippet = snippet.slice(0, 200).replace(/\s+\S*$/, '') + '…';
+  return { snippet, anchor };
 }
 
 // Human label for a citation's source.
@@ -132,20 +160,6 @@ function sourceLabel(core, talk, cit) {
     return `Teachings of the Prophet Joseph Smith${cit.Page ? ', p. ' + cit.Page : ''}`;
   }
   return '';
-}
-
-// Best-effort snippet: the citing paragraph's text, truncated. Refined once the
-// real citation <span> markup is confirmed via --inspect.
-function extractSnippet(html, cit, book) {
-  if (!html) return '';
-  // Split into paragraphs and find one mentioning the book + chapter reference.
-  const paras = html.split(/<\/p>/i).map((p) => stripTags(p)).filter(Boolean);
-  const cite = (book && book.fullName) ? book.fullName : '';
-  const ref = new RegExp(`${cite}[^0-9]{0,4}${cit.Chapter}\\b`, 'i');
-  let para = paras.find((p) => ref.test(p));
-  if (!para) return '';
-  if (para.length > 160) para = para.slice(0, 157).trimEnd() + '…';
-  return para;
 }
 
 // ---- inspect ----
@@ -234,15 +248,15 @@ function build(core, content) {
 
       if (!(r.citId in cites)) {
         const html = getTalkHtml(r.talkId);
-        cites[r.citId] = {
-          t: r.talkId,
-          v: r.verses || vs,
-          sn: extractSnippet(html, { Chapter: r.chapter, Page: r.page, Volume: r.volume }, book),
-        };
+        const { snippet, anchor } = extractCitation(html, r.citId);
+        const entry = { t: r.talkId, v: r.verses || vs, sn: snippet };
+        if (anchor) entry.a = anchor; // GC paragraph anchor for live deep-link
+        cites[r.citId] = entry;
         count++;
       }
 
       if (!(r.talkId in sources)) {
+        const churchUrl = r.corpus === 'G' ? toChurchUrl(r.url) : null;
         sources[r.talkId] = {
           c: r.corpus,
           sp: decodeEntities([r.given, r.last].filter(Boolean).join(' ')) || 'Unknown',
@@ -250,12 +264,13 @@ function build(core, content) {
           d: (r.date || '').slice(0, 7),
           lbl: sourceLabel(core, { Corpus: r.corpus, Date: r.date }, { Page: r.page, Volume: r.volume }),
         };
-        const churchUrl = r.corpus === 'G' ? toChurchUrl(r.url) : null;
-        if (churchUrl) sources[r.talkId].url = churchUrl;
+        if (churchUrl) sources[r.talkId].url = churchUrl; // live-fetch target
       }
 
-      // Bundle full text for E/J/T (not on the church site); G is fetched live.
-      if (r.corpus !== 'G' && !bundledTalks.has(r.talkId)) {
+      // Bundle full text for everything not opened live: E/J/T always, plus any
+      // G talk whose church URL couldn't be derived (so it's still openable).
+      const liveG = r.corpus === 'G' && sources[r.talkId] && sources[r.talkId].url;
+      if (!liveG && !bundledTalks.has(r.talkId)) {
         const html = getTalkHtml(r.talkId);
         if (html) {
           fs.writeFileSync(path.join(OUT, 'talks', `${r.talkId}.html.gz`), zlib.gzipSync(Buffer.from(html, 'utf8')));
