@@ -5,7 +5,7 @@
  */
 
 #btx-root {
-  --btx-top: 0;                 /* header pins to the site's sticky toolbar band */
+  --btx-top: 0px;               /* header pins to the site's sticky toolbar band */
   --btx-width: 380px;
   --btx-bg: #ffffff;
   --btx-header-bg: #f0f0f0;
@@ -83,7 +83,7 @@
   justify-content: space-between;
   gap: 8px;
   padding: 6px 10px;
-  min-height: 48px;             /* line up with the site's sticky toolbar row */
+  min-height: 3.5rem;           /* line up with the site's sticky toolbar row */
   background: var(--btx-header-bg);
   border-bottom: 1px solid var(--btx-border);
   flex: 0 0 auto;

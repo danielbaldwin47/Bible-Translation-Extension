@@ -76,19 +76,20 @@
 #btx-root details[open] > summary > .btx-caret { transform: rotate(90deg); }
 
 #btx-root .btx-cit-label { flex: 1 1 auto; }
-/* Count chip (verse + source-type): subtle bordered rectangle, fixed width so
-   1/2-digit counts don't jitter and it stays distinct from the bold number. */
+/* Count chip (verse + source-type): subtle bordered rectangle with a fixed width
+   so every box is identical (1, 2, or 3 digits) and centered — a clean column. */
 #btx-root .btx-cit-count {
   flex: 0 0 auto;
+  box-sizing: border-box;
+  width: 28px;
   font-size: 11px;
   font-weight: 600;
   color: var(--btx-muted);
   background: transparent;
   border: 1px solid var(--btx-border);
   border-radius: 4px;
-  min-width: 2.4ch;
   text-align: center;
-  padding: 0 4px;
+  padding: 0 2px;
 }
 
 /* Source-type sub-dropdown inside a verse */

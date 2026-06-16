@@ -157,11 +157,13 @@
     body.appendChild(article);
     // Local highlights (saved on this machine, re-applied on reopen).
     try { highlights() && highlights().attach(article, entry.talkId); } catch (e) { /* non-fatal */ }
-    // Defer scroll until layout settles. Scroll the panel body (the overflow
-    // container), not the inner .btx-talk-scroll wrapper. Skipped when the user
-    // has turned off "open scrolled to the cited snippet".
+    // Defer scroll until layout settles (two frames, so re-applied highlights and
+    // reflow are accounted for). Scroll the panel body (the overflow container),
+    // not the inner .btx-talk-scroll wrapper. Skipped when the user has turned off
+    // "open scrolled to the cited snippet".
     if (autoScroll) {
-      requestAnimationFrame(() => scrollToCitation(article, bodyEl, { citId: entry.citId, anchor: live ? entry.anchor : null }));
+      requestAnimationFrame(() => requestAnimationFrame(() =>
+        scrollToCitation(article, bodyEl, { citId: entry.citId, anchor: live ? entry.anchor : null })));
     }
   }
 
