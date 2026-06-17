@@ -27,12 +27,13 @@
     return n;
   }
 
-  // A <summary> with a custom caret, a label, and a right-aligned count pill.
-  function summaryRow(cls, labelText, count) {
+  // A <summary> with a custom caret, a label, and a right-aligned count chip.
+  // countClass optionally tints the chip per source type (btx-grp-gc/jod/tpjs).
+  function summaryRow(cls, labelText, count, countClass) {
     const sum = el('summary', cls);
     sum.appendChild(el('span', 'btx-caret'));
     sum.appendChild(el('span', 'btx-cit-label', labelText));
-    sum.appendChild(el('span', 'btx-cit-count', String(count)));
+    sum.appendChild(el('span', 'btx-cit-count' + (countClass ? ' ' + countClass : ''), String(count)));
     return sum;
   }
 
@@ -100,7 +101,7 @@
             const items = entries.filter((e) => g.corpora.includes((e.source || {}).c));
             if (!items.length) continue;
             const cgroup = el('details', 'btx-cit-cgroup');
-            cgroup.appendChild(summaryRow('btx-cit-chead', g.label, items.length));
+            cgroup.appendChild(summaryRow('btx-cit-chead', g.label, items.length, `btx-grp-${g.key}`));
             for (const entry of items) cgroup.appendChild(entryRow(entry, onOpenTalk));
             vgroup.appendChild(cgroup);
           }

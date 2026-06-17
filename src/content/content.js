@@ -33,6 +33,7 @@
   let isBibleCurrent = true; // current page has translations (OT/NT)?
   let scrollToSnippet = true; // open sources scrolled to the cited paragraph
   let citCache = null; // { key, node, scrollTop } — preserves the citations view
+  let transCache = null; // { key, node, footer, scrollTop } — preserves translation view
 
   // On non-Bible books there's no translation, so Citations is forced.
   function effectiveMode() {
@@ -102,7 +103,8 @@
     const key = `${parsed.collection}/${parsed.ldsBook}/${parsed.chapter}/${parsed.lang}`;
     if (key === currentKey) return;
     currentKey = key;
-    citCache = null; // new chapter -> discard the cached citations view
+    citCache = null; // new chapter -> discard the cached views
+    transCache = null;
     clearTimeout(retryTimer);
 
     panel.ensureRoot();
@@ -147,7 +149,24 @@
       selectedId = (findTranslation(stored) && stored) || (findTranslation(e.defaultId) && e.defaultId) || list[0].id;
     }
     panel.populateTranslations(list, selectedId);
+    // Re-attach the cached chapter (keeps scroll) instead of re-fetching.
+    if (transCache && transCache.key === transKey() && transCache.node) {
+      panel.reattachContent(transCache.node, transCache.footer);
+      const body = panel.getBodyEl();
+      const top = transCache.scrollTop || 0;
+      body.scrollTop = top;
+      requestAnimationFrame(() => { body.scrollTop = top; });
+      return;
+    }
     await loadChapter();
+  }
+
+  function transKey() {
+    return current ? `${citKey(current)}::${selectedId}` : null;
+  }
+
+  function saveTransScroll() {
+    if (transCache) transCache.scrollTop = panel.getBodyEl().scrollTop;
   }
 
   function citKey(parsed) {
@@ -214,11 +233,13 @@
       handleError((res && res.error) || { code: C.ERR.UNKNOWN }, label);
       return;
     }
-    panel.renderContent({
+    const footer = res.copyright || tr.copyright || '';
+    const node = panel.renderContent({
       blocks: res.blocks,
-      copyright: res.copyright || tr.copyright || '',
+      copyright: footer,
       reference: res.reference || refLabel(parsed),
     });
+    transCache = { key: transKey(), node, footer, scrollTop: 0 };
     if (res.fums) fireFums(res.fums);
   }
 
@@ -308,7 +329,7 @@
       onModeChange: (m) => {
         if (!isBibleCurrent) return; // toggle hidden on non-Bible books
         if (m === mode) return;
-        if (effectiveMode() === 'citations') saveCitScroll(); // remember position
+        if (effectiveMode() === 'citations') saveCitScroll(); else saveTransScroll();
         mode = m;
         storeMode();
         panel.setMode(m);

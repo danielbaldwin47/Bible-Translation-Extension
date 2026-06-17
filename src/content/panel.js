@@ -14,6 +14,7 @@
   const cbs = {}; // event callbacks set by the orchestrator
   let scrollRaf = null;
   let scrollSyncOn = false;
+  let scrollFadeTimer = null;
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -93,6 +94,12 @@
     modeTranslation.addEventListener('click', () => cbs.onModeChange && cbs.onModeChange('translation'));
     modeCitations.addEventListener('click', () => cbs.onModeChange && cbs.onModeChange('citations'));
     resize.addEventListener('pointerdown', onResizeDown);
+    // Show the scrollbar while scrolling, fade it ~1s after it stops.
+    body.addEventListener('scroll', () => {
+      body.classList.add('btx-scrolling');
+      clearTimeout(scrollFadeTimer);
+      scrollFadeTimer = setTimeout(() => body.classList.remove('btx-scrolling'), 1000);
+    }, { passive: true });
 
     ui = { rootEl, panel, header, title, select, modes, modeTranslation, modeCitations, body, footer, tab, resize };
     return ui;
@@ -203,6 +210,17 @@
     if (payload.copyright) ui.footer.textContent = payload.copyright;
     ui.body.scrollTop = 0;
     if (!isCollapsed()) attachScrollSync();
+    return article;
+  }
+
+  // Re-display a previously-rendered translation node (preserves scroll, set by
+  // the caller). Used to keep the Translation tab's position across mode toggles.
+  function reattachContent(node, footerText) {
+    ensureRoot();
+    ui.body.textContent = '';
+    ui.footer.textContent = footerText || '';
+    ui.body.appendChild(node);
+    if (!isCollapsed()) attachScrollSync();
   }
 
   // ---- Proportional scroll-sync with the main page ----
@@ -311,7 +329,7 @@
     panel: {
       ensureRoot, setHandlers, setVisible, setCollapsed, isCollapsed, setTitle,
       populateTranslations, renderLoading, renderNoKey, renderError, renderContent,
-      getRootEl, getBodyEl, setMode, setWidth, setBibleMode,
+      reattachContent, getRootEl, getBodyEl, setMode, setWidth, setBibleMode,
     },
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -13,10 +13,11 @@
   // graceful fallbacks. Used to mirror font-size/family/line-height.
   function resolveReadingContainer() {
     const candidates = [
-      'main [data-aid]',
+      'main [data-aid] p',
       'main article p',
       'main p',
       'article p',
+      'main [data-aid]',
       'main',
       'article',
     ];
@@ -25,6 +26,23 @@
       if (el) return el;
     }
     return document.body;
+  }
+
+  // Best-effort: height of the site's sticky top toolbar, so the panel header can
+  // line up with it. Cached once found (so it doesn't change as the user scrolls).
+  let headerHeightPx = null;
+  function captureHeaderHeight() {
+    if (headerHeightPx != null) return headerHeightPx;
+    let best = 0;
+    const cands = document.querySelectorAll('header, [role="banner"], [role="toolbar"], nav');
+    for (const el of cands) {
+      const cs = getComputedStyle(el);
+      if (cs.position !== 'sticky' && cs.position !== 'fixed') continue;
+      const r = el.getBoundingClientRect();
+      if (r.top <= 8 && r.height >= 36 && r.height <= 72) best = best ? Math.min(best, r.height) : r.height;
+    }
+    if (best) headerHeightPx = Math.round(best);
+    return headerHeightPx; // null until a plausible bar is found
   }
 
   // Walk up from el to find the first non-transparent background color.
@@ -78,6 +96,7 @@
       bg,
       fg,
       headerBg: captureHeaderBg(bg, dark),
+      headerH: captureHeaderHeight(),
       font: cs.fontFamily || 'Georgia, serif',
       size: cs.fontSize || '17px',
       line: cs.lineHeight && cs.lineHeight !== 'normal' ? cs.lineHeight : '1.6',
@@ -91,6 +110,7 @@
     targetEl.style.setProperty('--btx-bg', v.bg);
     targetEl.style.setProperty('--btx-fg', v.fg);
     if (v.headerBg) targetEl.style.setProperty('--btx-header-bg', v.headerBg);
+    if (v.headerH) targetEl.style.setProperty('--btx-header-h', v.headerH + 'px');
     targetEl.style.setProperty('--btx-font', v.font);
     targetEl.style.setProperty('--btx-size', v.size);
     targetEl.style.setProperty('--btx-line', v.line);
