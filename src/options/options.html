@@ -51,6 +51,18 @@
         <input type="checkbox" id="scrollToSnippet" />
         <span>Open sources scrolled to the cited snippet</span>
       </label>
+      <div class="row" id="citationViewRow">
+        <label for="citationView">Citations layout</label>
+        <select id="citationView">
+          <option value="verse">Sort by verse</option>
+          <option value="source">Sort by source</option>
+        </select>
+      </div>
+      <p class="hint">
+        <strong>By verse</strong> lists talks under each verse (a talk citing a range
+        shows once, then as a link under the other verses it spans).
+        <strong>By source</strong> lists each citing talk once, tagged with the verses it cites.
+      </p>
       <div class="row" id="widthRow">
         <label for="sidebarWidth">Panel width</label>
         <input type="range" id="sidebarWidth" min="280" max="900" step="10" />
