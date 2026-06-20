@@ -1,7 +1,13 @@
 /*
  * Citations mode: renders, for the current chapter, the talks/sermons that cite
- * each verse — grouped by verse, newest first, with a context snippet. Clicking
- * an entry hands off to the inline talk reader via the onOpenTalk callback.
+ * its verses. Two layouts (chosen in settings, passed as opts.view):
+ *   - 'verse'  : accordion verse -> source type -> talks. A citation that spans a
+ *                verse range shows its full entry once (under the first verse of
+ *                its range) and a slim labeled link under every other verse it
+ *                spans, so it stays discoverable without repeating the snippet.
+ *   - 'source' : one deduped row per citing source, grouped by source type, each
+ *                tagged with the verse/range it cites.
+ * Clicking an entry hands off to the inline talk reader via onOpenTalk.
  *
  * IIFE -> __BTX.citPanel.
  */
@@ -48,16 +54,54 @@
     return out || s.d || '';
   }
 
-  function entryRow(entry, onOpenTalk) {
+  // Collapse an ascending list of verse numbers into runs: [3..10] -> "3–10",
+  // [24,45,46] -> "24, 45–46".
+  function formatVerses(vs) {
+    if (!vs || !vs.length) return '';
+    const parts = [];
+    let start = vs[0], prev = vs[0];
+    for (let i = 1; i <= vs.length; i++) {
+      const cur = vs[i];
+      if (cur === prev + 1) { prev = cur; continue; }
+      parts.push(start === prev ? String(start) : `${start}–${prev}`);
+      start = cur; prev = cur;
+    }
+    return parts.join(', ');
+  }
+
+  function verseLabel(vs) {
+    return (vs && vs.length > 1 ? 'vv. ' : 'v. ') + formatVerses(vs);
+  }
+
+  // Newest-first by source date ("YYYY-MM"); undated entries sort last.
+  function byDateDesc(a, b) {
+    const da = (a.source || {}).d || '';
+    const db = (b.source || {}).d || '';
+    if (da === db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return da < db ? 1 : -1;
+  }
+
+  // One talk row. opts: { compact, rangeLabel }. A compact row shows only the
+  // speaker + range label + source tag (no title/snippet) for spanning citations
+  // repeated under a later verse; the full row adds title/date + snippet.
+  function entryRow(entry, onOpenTalk, opts) {
+    opts = opts || {};
     const s = entry.source || {};
-    const row = el('div', 'btx-cit');
+    const row = el('div', 'btx-cit' + (opts.compact ? ' btx-cit-compact' : ''));
     const head = el('div', 'btx-cit-head');
-    head.appendChild(el('span', 'btx-cit-speaker', s.sp || 'Unknown'));
+    const left = el('div', 'btx-cit-headl');
+    left.appendChild(el('span', 'btx-cit-speaker', s.sp || 'Unknown'));
+    if (opts.rangeLabel) left.appendChild(el('span', 'btx-cit-range', opts.rangeLabel));
+    head.appendChild(left);
     head.appendChild(el('span', `btx-cit-tag btx-tag-${s.c || 'G'}`, CORPUS_TAG[s.c] || 'GC'));
     row.appendChild(head);
-    const sub = [s.ti, shortLabel(s)].filter(Boolean).join(' · ');
-    if (sub) row.appendChild(el('div', 'btx-cit-sub', sub));
-    if (entry.snippet) row.appendChild(el('div', 'btx-cit-snippet', '“' + entry.snippet + '”'));
+    if (!opts.compact) {
+      const sub = [s.ti, shortLabel(s)].filter(Boolean).join(' · ');
+      if (sub) row.appendChild(el('div', 'btx-cit-sub', sub));
+      if (entry.snippet) row.appendChild(el('div', 'btx-cit-snippet', '“' + entry.snippet + '”'));
+    }
     row.tabIndex = 0;
     row.setAttribute('role', 'button');
     const open = () => onOpenTalk && onOpenTalk(entry);
@@ -66,50 +110,92 @@
     return row;
   }
 
+  // Layout 'verse': verse -> source type -> talks; spanning citations shown once
+  // (full, under their first verse) and as compact links under their other verses.
+  function renderByVerse(wrap, data, fullName, chapter, focusVerse, onOpenTalk) {
+    let focusEl = null;
+    wrap.appendChild(el('div', 'btx-cit-summary',
+      `${data.uniqueTotal} citation${data.uniqueTotal === 1 ? '' : 's'} in ${fullName || ''} ${chapter}`.trim()));
+
+    for (const v of data.verseOrder) {
+      const ids = data.byVerse[v] || [];
+      const entries = ids.map((id) => data.entries[id]).filter(Boolean);
+      if (!entries.length) continue;
+
+      // Verse-level dropdown, collapsed by default. Chip = distinct citations
+      // touching this verse (a spanning citation counts under each verse).
+      const vgroup = el('details', 'btx-cit-vgroup');
+      vgroup.appendChild(summaryRow('btx-cit-vhead', `${v}`, entries.length));
+
+      for (const g of GROUPS) {
+        const items = entries.filter((e) => g.corpora.includes((e.source || {}).c));
+        if (!items.length) continue;
+        const cgroup = el('details', 'btx-cit-cgroup');
+        cgroup.appendChild(summaryRow('btx-cit-chead', g.label, items.length, `btx-grp-${g.key}`));
+        for (const entry of items) {
+          const span = entry.versesInChapter;
+          if (span.length <= 1) {
+            cgroup.appendChild(entryRow(entry, onOpenTalk));
+          } else if (span[0] === v) {
+            cgroup.appendChild(entryRow(entry, onOpenTalk, { rangeLabel: verseLabel(span) }));
+          } else {
+            cgroup.appendChild(entryRow(entry, onOpenTalk, { compact: true, rangeLabel: verseLabel(span) }));
+          }
+        }
+        vgroup.appendChild(cgroup);
+      }
+
+      if (String(v) === String(focusVerse)) { vgroup.open = true; vgroup.classList.add('btx-cit-focus'); focusEl = vgroup; }
+      wrap.appendChild(vgroup);
+    }
+    return focusEl;
+  }
+
+  // Layout 'source': one deduped row per source, grouped by source type, each
+  // tagged with the verse/range it cites. Groups open by default (only three).
+  function renderBySource(wrap, data, fullName, chapter, onOpenTalk) {
+    wrap.appendChild(el('div', 'btx-cit-summary',
+      `${data.uniqueTotal} source${data.uniqueTotal === 1 ? '' : 's'} cite ${fullName || ''} ${chapter}`.trim()));
+
+    const all = Object.values(data.entries).sort(byDateDesc);
+    for (const g of GROUPS) {
+      const items = all.filter((e) => g.corpora.includes((e.source || {}).c));
+      if (!items.length) continue;
+      const group = el('details', 'btx-cit-vgroup');
+      group.open = true;
+      group.appendChild(summaryRow('btx-cit-vhead', g.label, items.length, `btx-grp-${g.key}`));
+      const cgroup = el('div', 'btx-cit-cgroup');
+      for (const entry of items) {
+        cgroup.appendChild(entryRow(entry, onOpenTalk, { rangeLabel: verseLabel(entry.versesInChapter) }));
+      }
+      group.appendChild(cgroup);
+      wrap.appendChild(group);
+    }
+    return null;
+  }
+
   // Render the chapter's citations into bodyEl. Builds into a single wrapper that
   // is returned, so the orchestrator can cache + re-attach it (preserving scroll
   // and which dropdowns are open) when toggling between modes.
-  // opts: { slug, chapter, fullName, focusVerse, onOpenTalk }
+  // opts: { slug, chapter, fullName, focusVerse, onOpenTalk, view }
   async function render(bodyEl, opts) {
-    const { slug, chapter, fullName, focusVerse, onOpenTalk } = opts;
+    const { slug, chapter, fullName, focusVerse, onOpenTalk, view } = opts;
     bodyEl.textContent = '';
     bodyEl.appendChild(el('div', 'btx-state-text btx-cit-loading', 'Loading citations…'));
 
-    const data = await citData().chapterCitations(slug, chapter);
+    const data = await citData().chapterData(slug, chapter);
 
     const wrap = el('div', 'btx-cit-list');
     let focusEl = null;
 
     if (!data) {
       wrap.appendChild(el('p', 'btx-state-text', 'No citation data for this book.'));
+    } else if (!data.verseOrder.length || data.uniqueTotal === 0) {
+      wrap.appendChild(el('p', 'btx-state-text', `No talks cite ${fullName || ''} ${chapter}.`.trim()));
+    } else if (view === 'source') {
+      focusEl = renderBySource(wrap, data, fullName, chapter, onOpenTalk);
     } else {
-      const verses = Object.keys(data.byVerse).map(Number).sort((a, b) => a - b);
-      if (!verses.length || data.total === 0) {
-        wrap.appendChild(el('p', 'btx-state-text', `No talks cite ${fullName || ''} ${chapter}.`.trim()));
-      } else {
-        wrap.appendChild(el('div', 'btx-cit-summary', `${data.total} citation${data.total === 1 ? '' : 's'} in ${fullName || ''} ${chapter}`.trim()));
-        for (const v of verses) {
-          const entries = data.byVerse[v];
-          if (!entries || !entries.length) continue;
-
-          // Verse-level dropdown, collapsed by default.
-          const vgroup = el('details', 'btx-cit-vgroup');
-          vgroup.appendChild(summaryRow('btx-cit-vhead', `${v}`, entries.length));
-
-          // Bucket this verse's entries (already newest-first) by source type.
-          for (const g of GROUPS) {
-            const items = entries.filter((e) => g.corpora.includes((e.source || {}).c));
-            if (!items.length) continue;
-            const cgroup = el('details', 'btx-cit-cgroup');
-            cgroup.appendChild(summaryRow('btx-cit-chead', g.label, items.length, `btx-grp-${g.key}`));
-            for (const entry of items) cgroup.appendChild(entryRow(entry, onOpenTalk));
-            vgroup.appendChild(cgroup);
-          }
-
-          if (String(v) === String(focusVerse)) { vgroup.open = true; vgroup.classList.add('btx-cit-focus'); focusEl = vgroup; }
-          wrap.appendChild(vgroup);
-        }
-      }
+      focusEl = renderByVerse(wrap, data, fullName, chapter, focusVerse, onOpenTalk);
     }
 
     bodyEl.textContent = '';

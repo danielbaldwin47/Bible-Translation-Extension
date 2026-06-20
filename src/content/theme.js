@@ -45,6 +45,13 @@
     return headerHeightPx; // null until a plausible bar is found
   }
 
+  // True once captureHeaderHeight() has measured the site's toolbar. The first
+  // theme apply at launch can run before the SPA toolbar is laid out (height
+  // unknown), so the caller re-applies until this flips true.
+  function headerHeightKnown() {
+    return headerHeightPx != null;
+  }
+
   // Walk up from el to find the first non-transparent background color.
   function effectiveBackground(el) {
     let node = el;
@@ -139,6 +146,6 @@
   }
 
   root.__BTX = Object.assign(root.__BTX || {}, {
-    theme: { resolveReadingContainer, capture, apply, observe, luminance },
+    theme: { resolveReadingContainer, capture, apply, observe, luminance, headerHeightKnown },
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

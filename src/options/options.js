@@ -22,6 +22,7 @@
     defaultTranslation: $('defaultTranslation'),
     actOnNonEngOnly: $('actOnNonEngOnly'),
     scrollToSnippet: $('scrollToSnippet'),
+    citationView: $('citationView'),
     sidebarWidth: $('sidebarWidth'),
     sidebarWidthOut: $('sidebarWidthOut'),
     save: $('save'),
@@ -135,6 +136,7 @@
       defaultTranslationId: defaultId,
       actOnNonEngOnly: els.actOnNonEngOnly.checked,
       scrollToSnippet: els.scrollToSnippet.checked,
+      citationView: els.citationView.value === 'source' ? 'source' : 'verse',
       sidebarWidth: Number(els.sidebarWidth.value) || 380,
     };
     await chrome.storage.sync.set({ [C.SETTINGS_KEY]: next });
@@ -150,6 +152,7 @@
     els.apiKey.value = settings.apiKey || '';
     els.actOnNonEngOnly.checked = settings.actOnNonEngOnly !== false;
     els.scrollToSnippet.checked = settings.scrollToSnippet !== false;
+    els.citationView.value = settings.citationView === 'source' ? 'source' : 'verse';
 
     const w = Number(settings.sidebarWidth) || 380;
     els.sidebarWidth.value = String(w);

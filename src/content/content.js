@@ -32,6 +32,7 @@
   let mode = 'translation'; // user's preferred mode on Bible chapters
   let isBibleCurrent = true; // current page has translations (OT/NT)?
   let scrollToSnippet = true; // open sources scrolled to the cited paragraph
+  let citationView = 'verse'; // citations layout: 'verse' | 'source'
   let citCache = null; // { key, node, scrollTop } — preserves the citations view
   let transCache = null; // { key, node, footer, scrollTop } — preserves translation view
 
@@ -74,6 +75,17 @@
 
   function applyTheme() {
     theme.apply(panel.getRootEl(), theme.capture());
+  }
+
+  // The panel header matches the site's sticky toolbar height (--btx-header-h),
+  // but that toolbar may not be laid out when we first render, so the height
+  // reads as unknown and the bars misalign until something (a resize) re-captures
+  // it. Re-apply on a short backoff until it resolves — proactively, at launch.
+  function applyThemeUntilAligned(attempt) {
+    applyTheme();
+    if (theme.headerHeightKnown() || attempt >= 8) return;
+    const delay = attempt === 0 ? 0 : Math.min(500, 50 * 2 ** (attempt - 1));
+    setTimeout(() => requestAnimationFrame(() => applyThemeUntilAligned(attempt + 1)), delay);
   }
 
   async function loadEnabled(force) {
@@ -122,7 +134,7 @@
     }
 
     panel.setVisible(true);
-    applyTheme();
+    applyThemeUntilAligned(0);
     panel.setTitle(refLabel(parsed));
     panel.setBibleMode(isBibleCurrent);
     panel.setMode(effectiveMode());
@@ -179,7 +191,7 @@
 
   async function renderCitations(parsed, focusVerse) {
     const body = panel.getBodyEl();
-    const key = citKey(parsed);
+    const key = `${citKey(parsed)}::${citationView}`;
     // Re-attach the cached view (keeps scroll + which dropdowns are open).
     if (!focusVerse && citCache && citCache.key === key && citCache.node) {
       body.textContent = '';
@@ -195,6 +207,7 @@
       fullName: BOOKS.bookFullName(parsed.ldsBook) || parsed.ldsBook,
       focusVerse,
       onOpenTalk: openTalk,
+      view: citationView,
     });
     citCache = { key, node, scrollTop: 0 };
   }
@@ -342,6 +355,7 @@
     const initSettings = await getSyncSettings();
     if (initSettings.sidebarWidth) applyWidth(initSettings.sidebarWidth);
     scrollToSnippet = initSettings.scrollToSnippet !== false;
+    citationView = initSettings.citationView === 'source' ? 'source' : 'verse';
 
     detect.setupNavigation(() => render());
 
@@ -357,6 +371,7 @@
         const ov = changes[C.SETTINGS_KEY].oldValue || {};
         if (nv.sidebarWidth !== ov.sidebarWidth) applyWidth(nv.sidebarWidth);
         scrollToSnippet = nv.scrollToSnippet !== false;
+        citationView = nv.citationView === 'source' ? 'source' : 'verse';
         if (sameExceptWidth(ov, nv)) return;
         enabled = null;
         currentKey = null; // force a re-render with the new settings

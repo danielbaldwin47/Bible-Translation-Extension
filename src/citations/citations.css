@@ -114,7 +114,9 @@
   color: var(--btx-fg);
 }
 #btx-root summary.btx-cit-chead:hover { background: var(--btx-border); }
-#btx-root .btx-cit-cgroup > .btx-cit { margin: 2px 8px; }
+/* Inner padding makes each entry read as one unit; the bottom margin separates
+   adjacent entries (the snippet line-height is tightened so entries stay compact). */
+#btx-root .btx-cit-cgroup > .btx-cit { margin: 2px 8px 10px; }
 
 #btx-root .btx-cit {
   padding: 8px;
@@ -124,8 +126,30 @@
 }
 #btx-root .btx-cit:hover { background: var(--btx-border); }
 #btx-root .btx-cit:focus-visible { outline: 2px solid var(--btx-accent); }
+/* Compact variant: a spanning citation repeated under a later verse (link only). */
+#btx-root .btx-cit-compact { padding: 5px 8px; }
 #btx-root .btx-cit-head { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
-#btx-root .btx-cit-speaker { font-weight: 600; font-size: 13.5px; }
+#btx-root .btx-cit-headl { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; }
+#btx-root .btx-cit-speaker {
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Verse/range label on a spanning (or source-view) entry, e.g. "vv. 3–10". */
+#btx-root .btx-cit-range {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--btx-muted);
+  border: 1px solid var(--btx-border);
+  border-radius: 6px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
 #btx-root .btx-cit-tag {
   font-size: 10px;
   font-weight: 700;
@@ -138,8 +162,8 @@
 #btx-root .btx-tag-G, #btx-root .btx-tag-E { background: #006184; }
 #btx-root .btx-tag-J { background: #7a5230; }
 #btx-root .btx-tag-T { background: #4a5d23; }
-#btx-root .btx-cit-sub { font-size: 12px; color: var(--btx-muted); margin-top: 1px; }
-#btx-root .btx-cit-snippet { font-size: 12.5px; margin-top: 4px; opacity: 0.9; font-style: italic; }
+#btx-root .btx-cit-sub { font-size: 12px; color: var(--btx-muted); margin-top: 2px; line-height: 1.3; }
+#btx-root .btx-cit-snippet { font-size: 12.5px; margin-top: 3px; opacity: 0.9; font-style: italic; line-height: 1.3; }
 
 /* ---- Inline talk reader ---- */
 #btx-root .btx-talk-header {

@@ -56,26 +56,42 @@
     return talkPromises[talkId];
   }
 
-  // Convenience: citations for a given chapter, grouped by verse, resolved with
-  // source metadata. Returns { byVerse: { [verse]: [entry] }, total } or null.
-  async function chapterCitations(slug, chapter) {
+  // Deduped citations for a chapter, plus each citation's in-chapter verse span.
+  // A single citation can cover a verse range, so it is indexed under every verse
+  // it spans; we collect those verses (versesInChapter) so the panel can show a
+  // citation once and label its range instead of repeating it per verse.
+  // Returns { verseOrder:[int], byVerse:{ [verse]:[citId] }, entries:{ [citId]:entry },
+  //   uniqueTotal } — or null when the book has no data file.
+  async function chapterData(slug, chapter) {
     const [shard, sources] = await Promise.all([loadShard(slug), loadSources().catch(() => ({}))]);
     if (!shard) return null;
     const chap = shard.index[String(chapter)];
-    if (!chap) return { byVerse: {}, total: 0 };
+    if (!chap) return { verseOrder: [], byVerse: {}, entries: {}, uniqueTotal: 0 };
+
+    const verseOrder = Object.keys(chap).map(Number).sort((a, b) => a - b);
     const byVerse = {};
-    let total = 0;
-    for (const verse of Object.keys(chap)) {
-      const entries = [];
-      for (const citId of chap[verse]) {
-        const c = shard.cites[citId];
-        if (!c) continue;
-        entries.push({ citId, talkId: c.t, verses: c.v, snippet: c.sn, anchor: c.a, source: sources[c.t] || {} });
-        total++;
-      }
-      byVerse[verse] = entries;
+    const spanOf = {}; // citId -> [verse,...] (ascending, since verseOrder is sorted)
+    for (const v of verseOrder) {
+      const ids = chap[String(v)] || [];
+      byVerse[v] = ids;
+      for (const id of ids) (spanOf[id] = spanOf[id] || []).push(v);
     }
-    return { byVerse, total };
+
+    const entries = {};
+    for (const id of Object.keys(spanOf)) {
+      const c = shard.cites[id];
+      if (!c) continue; // skip ids with no resolvable citation record
+      entries[id] = {
+        citId: id,
+        talkId: c.t,
+        verses: c.v,
+        versesInChapter: spanOf[id],
+        snippet: c.sn,
+        anchor: c.a,
+        source: sources[c.t] || {},
+      };
+    }
+    return { verseOrder, byVerse, entries, uniqueTotal: Object.keys(entries).length };
   }
 
   // Per-verse counts for badges: { [verse]: count }.
@@ -90,6 +106,6 @@
   }
 
   root.__BTX = Object.assign(root.__BTX || {}, {
-    citData: { loadSources, loadShard, loadTalkHtml, chapterCitations, chapterCounts },
+    citData: { loadSources, loadShard, loadTalkHtml, chapterData, chapterCounts },
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
