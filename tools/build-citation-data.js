@@ -131,6 +131,32 @@ function toChurchUrl(url) {
   return null;
 }
 
+// STPJS (Teachings of the Prophet Joseph Smith) bundles citations in a bottom
+// footnote list (<div class="footnote">N. <span class="citation">…refs…</span>),
+// while the body carries <span class="footRef">N</span> markers. Given a footnote
+// number, return the body sentence that marker annotates (its referenced text)
+// rather than the bare scripture-reference line.
+function stpjsBodyPassage(html, num) {
+  const bodyEnd = html.indexOf('<div class="footnotes"');
+  const body = bodyEnd >= 0 ? html.slice(0, bodyEnd) : html;
+  const TOKEN = '~~FREF~~';
+  let marked = body.replace(new RegExp(`<span class="footRef">\\s*${num}\\s*</span>`), TOKEN);
+  // Drop the other in-body footnote markers so their numbers don't pollute the text.
+  marked = marked.replace(/<span class="footRef">\s*\d+\s*<\/span>/g, '');
+  const text = stripTags(marked);
+  const idx = text.indexOf(TOKEN);
+  if (idx < 0) return '';
+  const start = Math.max(
+    text.lastIndexOf('. ', idx), text.lastIndexOf('? ', idx),
+    text.lastIndexOf('! ', idx), text.lastIndexOf('] ', idx)
+  );
+  let end = text.length;
+  for (const p of ['. ', '? ', '! ']) { const k = text.indexOf(p, idx); if (k >= 0) end = Math.min(end, k + 1); }
+  let sentence = text.slice(start >= 0 ? start + 1 : 0, end).replace(TOKEN, '').replace(/\s+/g, ' ').trim();
+  if (sentence.length > 220) sentence = sentence.slice(0, 200).replace(/\s+\S*$/, '') + '…';
+  return sentence;
+}
+
 // Locate a citation in the talk HTML by its citation.ID (the app marks each as
 // <span class="citation" id="{citId}">…</span>), return the enclosing block's
 // text as a snippet and, for modern GC, the paragraph anchor (e.g. "p21").
@@ -139,6 +165,16 @@ function extractCitation(html, citId) {
   const marker = `<span class="citation" id="${citId}"`;
   const i = html.indexOf(marker);
   if (i < 0) return { snippet: '', anchor: '' };
+  // STPJS: the citation span sits inside a "<div class="footnote">N." list item —
+  // prefer the body passage that footnote annotates over the reference line.
+  const fnStart = html.lastIndexOf('<div class="footnote">', i);
+  if (fnStart >= 0) {
+    const numM = /<div class="footnote">\s*(\d+)\./.exec(html.slice(fnStart, fnStart + 60));
+    if (numM) {
+      const passage = stpjsBodyPassage(html, numM[1]);
+      if (passage) return { snippet: passage, anchor: '' };
+    }
+  }
   // Enclosing block = nearest <p ...> or <div ...> opening before the span.
   const blockStart = Math.max(html.lastIndexOf('<p', i), html.lastIndexOf('<div', i), 0);
   const pEnd = html.indexOf('</p>', i);
@@ -312,10 +348,15 @@ function build(core, content) {
   console.log(`Output: ${OUT}`);
 }
 
+// Reused by tools/rederive-js-snippets.js (which has no DBs but the shipped talk HTML).
+module.exports = { extractCitation, stpjsBodyPassage, decompressTalk, stripTags, toChurchUrl };
+
 // ---- main ----
-const core = openDb(CORE);
-const content = openDb(CONTENT);
-if (INSPECT) inspect(core, content);
-else build(core, content);
-core.close();
-content.close();
+if (require.main === module) {
+  const core = openDb(CORE);
+  const content = openDb(CONTENT);
+  if (INSPECT) inspect(core, content);
+  else build(core, content);
+  core.close();
+  content.close();
+}
