@@ -126,8 +126,6 @@
 }
 #btx-root .btx-cit:hover { background: var(--btx-border); }
 #btx-root .btx-cit:focus-visible { outline: 2px solid var(--btx-accent); }
-/* Compact variant: a spanning citation repeated under a later verse (link only). */
-#btx-root .btx-cit-compact { padding: 5px 8px; }
 #btx-root .btx-cit-head { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
 #btx-root .btx-cit-headl { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; }
 #btx-root .btx-cit-speaker {
@@ -197,6 +195,23 @@
   border-radius: 4px;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--btx-accent) 22%, transparent);
 }
+
+/* ---- Bundled Joseph Smith (STPJS) talk markup ---- */
+/* In-body footnote markers (footRef) and the bottom footnote-list numbers render
+   as small blue superscript, matching the translation reader's verse numbers. */
+#btx-root .btx-talk .btxk-footRef,
+#btx-root .btx-talk .btx-footnum {
+  font-size: 0.62em;
+  font-weight: 700;
+  vertical-align: super;
+  line-height: 0;
+  color: var(--btx-accent);
+}
+#btx-root .btx-talk .btxk-footRef { margin-left: 1px; }
+#btx-root .btx-talk .btx-footnum { margin-right: 4px; }
+/* Drop the leftover "Prev"/"Next" page nav from the bundled HTML. */
+#btx-root .btx-talk .btxk-prev,
+#btx-root .btx-talk .btxk-next { display: none; }
 /* "Open full talk" link, pinned top-right in the reader header. */
 #btx-root .btx-talk-source {
   flex: 0 0 auto;

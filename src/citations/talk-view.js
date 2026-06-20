@@ -68,7 +68,42 @@
     const rootNode = pickContentRoot(doc);
     const wrap = el('div', 'btx-talk');
     sanitizeInto(rootNode, wrap);
+    styleFootnoteNumbers(wrap);
     return wrap;
+  }
+
+  // First non-empty text node within `node`, in document order.
+  function firstTextNode(node) {
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
+    let n;
+    while ((n = walker.nextNode())) { if (n.nodeValue && n.nodeValue.trim()) return n; }
+    return null;
+  }
+
+  // Bundled STPJS footnote list items begin with a literal "N." text node. Replace
+  // it with a blue superscript number (no period), matching the in-body footRef
+  // markers (styled via .btx-footnum in citations.css).
+  function styleFootnoteNumbers(article) {
+    for (const note of article.querySelectorAll('.btxk-footnote')) {
+      const tn = firstTextNode(note);
+      const m = tn && /^(\s*)(\d+)\.(\s*)/.exec(tn.nodeValue);
+      if (!m) continue;
+      tn.nodeValue = tn.nodeValue.slice(m[0].length);
+      note.insertBefore(el('span', 'btx-footnum', m[2]), tn);
+    }
+  }
+
+  // STPJS: a citId span lives in the bottom footnote list; map it to the body
+  // passage that footnote annotates (the paragraph holding the matching footRef).
+  function bodyPassageForFootnote(container, note) {
+    const sup = note.querySelector('.btx-footnum');
+    const tn = sup ? null : firstTextNode(note);
+    const num = sup ? sup.textContent.trim() : (tn && (/^\s*(\d+)\./.exec(tn.nodeValue) || [])[1]);
+    if (!num) return null;
+    for (const ref of container.querySelectorAll('.btxk-footRef')) {
+      if (ref.textContent.trim() === num) return ref.closest('p, .btxk-std') || ref;
+    }
+    return null;
   }
 
   function scrollToCitation(container, scrollEl, { citId, anchor }) {
@@ -77,6 +112,9 @@
     if (!target && citId != null) {
       // bundled SCI markup: <span class="btxk-citation" id="{citId}">
       target = container.querySelector(`[id="${cssId(String(citId))}"]`);
+      // STPJS: that span is in the footnote list — jump to the cited body passage.
+      const note = target && target.closest('.btxk-footnote');
+      if (note) target = bodyPassageForFootnote(container, note) || target;
     }
     if (!target) return;
     target.classList.add('btx-cit-highlight');

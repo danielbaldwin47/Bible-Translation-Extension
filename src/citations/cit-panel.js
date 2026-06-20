@@ -73,6 +73,16 @@
     return (vs && vs.length > 1 ? 'vv. ' : 'v. ') + formatVerses(vs);
   }
 
+  // First verse of each contiguous run in an ascending verse list, so a citation
+  // shows once per range it cites: [3,4,5,10,11] -> [3,10]; [24,45,46] -> [24,45].
+  function anchorVerses(vs) {
+    const anchors = [];
+    for (let i = 0; i < vs.length; i++) {
+      if (i === 0 || vs[i] !== vs[i - 1] + 1) anchors.push(vs[i]);
+    }
+    return anchors;
+  }
+
   // Newest-first by source date ("YYYY-MM"); undated entries sort last.
   function byDateDesc(a, b) {
     const da = (a.source || {}).d || '';
@@ -83,13 +93,12 @@
     return da < db ? 1 : -1;
   }
 
-  // One talk row. opts: { compact, rangeLabel }. A compact row shows only the
-  // speaker + range label + source tag (no title/snippet) for spanning citations
-  // repeated under a later verse; the full row adds title/date + snippet.
+  // One talk row. opts.rangeLabel adds a verse/range badge (e.g. "vv. 3–6, 10–11")
+  // for spanning citations and the by-source view.
   function entryRow(entry, onOpenTalk, opts) {
     opts = opts || {};
     const s = entry.source || {};
-    const row = el('div', 'btx-cit' + (opts.compact ? ' btx-cit-compact' : ''));
+    const row = el('div', 'btx-cit');
     const head = el('div', 'btx-cit-head');
     const left = el('div', 'btx-cit-headl');
     left.appendChild(el('span', 'btx-cit-speaker', s.sp || 'Unknown'));
@@ -97,11 +106,9 @@
     head.appendChild(left);
     head.appendChild(el('span', `btx-cit-tag btx-tag-${s.c || 'G'}`, CORPUS_TAG[s.c] || 'GC'));
     row.appendChild(head);
-    if (!opts.compact) {
-      const sub = [s.ti, shortLabel(s)].filter(Boolean).join(' · ');
-      if (sub) row.appendChild(el('div', 'btx-cit-sub', sub));
-      if (entry.snippet) row.appendChild(el('div', 'btx-cit-snippet', '“' + entry.snippet + '”'));
-    }
+    const sub = [s.ti, shortLabel(s)].filter(Boolean).join(' · ');
+    if (sub) row.appendChild(el('div', 'btx-cit-sub', sub));
+    if (entry.snippet) row.appendChild(el('div', 'btx-cit-snippet', '“' + entry.snippet + '”'));
     row.tabIndex = 0;
     row.setAttribute('role', 'button');
     const open = () => onOpenTalk && onOpenTalk(entry);
@@ -110,8 +117,9 @@
     return row;
   }
 
-  // Layout 'verse': verse -> source type -> talks; spanning citations shown once
-  // (full, under their first verse) and as compact links under their other verses.
+  // Layout 'verse': verse -> source type -> talks. A spanning citation is shown
+  // once at the first verse of each contiguous range it cites (anchorVerses), and
+  // carries a badge of its full coverage (e.g. "vv. 3–6, 10–11").
   function renderByVerse(wrap, data, fullName, chapter, focusVerse, onOpenTalk) {
     let focusEl = null;
     wrap.appendChild(el('div', 'btx-cit-summary',
@@ -119,11 +127,12 @@
 
     for (const v of data.verseOrder) {
       const ids = data.byVerse[v] || [];
-      const entries = ids.map((id) => data.entries[id]).filter(Boolean);
+      const entries = ids
+        .map((id) => data.entries[id])
+        .filter((e) => e && anchorVerses(e.versesInChapter).includes(v));
       if (!entries.length) continue;
 
-      // Verse-level dropdown, collapsed by default. Chip = distinct citations
-      // touching this verse (a spanning citation counts under each verse).
+      // Verse-level dropdown, collapsed by default. Chip = citations anchored here.
       const vgroup = el('details', 'btx-cit-vgroup');
       vgroup.appendChild(summaryRow('btx-cit-vhead', `${v}`, entries.length));
 
@@ -133,14 +142,8 @@
         const cgroup = el('details', 'btx-cit-cgroup');
         cgroup.appendChild(summaryRow('btx-cit-chead', g.label, items.length, `btx-grp-${g.key}`));
         for (const entry of items) {
-          const span = entry.versesInChapter;
-          if (span.length <= 1) {
-            cgroup.appendChild(entryRow(entry, onOpenTalk));
-          } else if (span[0] === v) {
-            cgroup.appendChild(entryRow(entry, onOpenTalk, { rangeLabel: verseLabel(span) }));
-          } else {
-            cgroup.appendChild(entryRow(entry, onOpenTalk, { compact: true, rangeLabel: verseLabel(span) }));
-          }
+          const multi = entry.versesInChapter.length > 1;
+          cgroup.appendChild(entryRow(entry, onOpenTalk, multi ? { rangeLabel: verseLabel(entry.versesInChapter) } : undefined));
         }
         vgroup.appendChild(cgroup);
       }
@@ -152,7 +155,7 @@
   }
 
   // Layout 'source': one deduped row per source, grouped by source type, each
-  // tagged with the verse/range it cites. Groups open by default (only three).
+  // tagged with the verse/range it cites. Collapsed by default (like by-verse).
   function renderBySource(wrap, data, fullName, chapter, onOpenTalk) {
     wrap.appendChild(el('div', 'btx-cit-summary',
       `${data.uniqueTotal} source${data.uniqueTotal === 1 ? '' : 's'} cite ${fullName || ''} ${chapter}`.trim()));
@@ -162,7 +165,6 @@
       const items = all.filter((e) => g.corpora.includes((e.source || {}).c));
       if (!items.length) continue;
       const group = el('details', 'btx-cit-vgroup');
-      group.open = true;
       group.appendChild(summaryRow('btx-cit-vhead', g.label, items.length, `btx-grp-${g.key}`));
       const cgroup = el('div', 'btx-cit-cgroup');
       for (const entry of items) {
