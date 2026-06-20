@@ -13,9 +13,12 @@ chapter** (OT/NT, Book of Mormon, D&C, Pearl of Great Price). One side panel:
    own API key.
 2. **Citations** (all books) — shows which **General Conference talks, Journal of
    Discourses sermons, and Teachings of Joseph Smith cite each verse** (BYU
-   Scripture Citation Index data), grouped per verse → by source type, and opens
-   those sources inline. On non-Bible books only Citations exists (no translation),
-   so the mode toggle is hidden.
+   Scripture Citation Index data), in one of two layouts chosen in settings
+   (`citationView`): **by verse** (verse → source-type → talks; a citation spanning
+   a range appears once at the first verse of each contiguous range) or **by source**
+   (one deduped row per talk, grouped by source type, tagged with the verses it
+   cites). Sources open inline. On non-Bible books only Citations exists (no
+   translation), so the mode toggle is hidden.
 
 In the inline talk reader the user can **select text to make local highlights**
 (stored in `chrome.storage.local` on this machine — not synced to a Church
@@ -24,7 +27,7 @@ account; re-applied when the talk reopens). The panel mirrors the site's theme
 is configurable (options slider + drag the left edge). Personal use only (api.bible
 + BYU/Church content are not redistributable → **not** for the Chrome Web Store).
 
-Active branch: `claude/adoring-pasteur-vqa80n`.
+Active branch: `claude/exciting-ramanujan-6gyoke` (PR #1).
 
 ## Hard rules / conventions
 
@@ -49,7 +52,7 @@ Active branch: `claude/adoring-pasteur-vqa80n`.
 ```
 manifest.json              MV3 (v1.2.0); content_scripts order matters
 src/
-  shared/constants.js      __BTX.const  message types, storage keys, API bases, limits, defaultSettings (sidebarWidth, scrollToSnippet, …), isFreeVersion()
+  shared/constants.js      __BTX.const  message types, storage keys, API bases, limits, defaultSettings (sidebarWidth, scrollToSnippet, citationView, …), isFreeVersion()
   shared/books.js          __BTX.books  66 Bible (slug→USFM/name) + non-Bible registry (BoM/D&C/PGP); bookFullName, isScriptureCollection, isKnownBook
   background/
     service-worker.js      classic worker; importScripts shared+libs; onMessage router
@@ -59,26 +62,27 @@ src/
   content/
     detect.js              __BTX.detect URL parse (all standard works + isBible flag) + SPA nav
     page-hook.js           page-world history patch, injected via web-accessible <script src> (CSP-safe)
-    theme.js               __BTX.theme  mirror site colors/fonts (+ headerBg); resolveReadingContainer()
+    theme.js               __BTX.theme  mirror site colors/fonts (+ headerBg); resolveReadingContainer(); captureHeaderHeight/headerHeightKnown
     sanitize.js            __BTX.sanitize  IR → DOM (text nodes only)
     panel.js               __BTX.panel  panel DOM, states, mode toggle, scroll-sync, setWidth + drag-resize, setBibleMode
     panel.css
-    content.js             orchestrator: detect → worker/citations → panel; mode (citations-only on non-Bible), width persistence
+    content.js             orchestrator: detect → worker/citations → panel; mode (citations-only on non-Bible), width persistence; citationView; applyThemeUntilAligned (re-applies theme at launch until the site toolbar height resolves)
   citations/
-    cit-data.js            __BTX.citData    load/cache shards, sources, gunzip bundled talks
-    cit-panel.js           __BTX.citPanel   accordion: verse <details> → source-type <details> → talk rows
+    cit-data.js            __BTX.citData    load/cache shards, sources, gunzip bundled talks; chapterData(slug,chap) → deduped entries + each cite's in-chapter verse span + uniqueTotal
+    cit-panel.js           __BTX.citPanel   two layouts (renderByVerse/renderBySource); anchorVerses dedup; formatVerses/verseLabel range labels
     highlights.js          __BTX.highlights local select-to-highlight in the reader; chrome.storage.local; re-apply on reopen
-    talk-view.js           __BTX.talkView   inline reader (live GC / bundled), sanitizer, scroll-to-citation, header "Open full talk"
+    talk-view.js           __BTX.talkView   inline reader (live GC / bundled), sanitizer, scroll-to-citation, header "Open full talk"; STPJS footnote rendering (blue-superscript footRef + footnote numbers, hide Prev/Next, scroll to the cited body passage)
     citations.css
     data/                  GENERATED, committed, shipped (~62 MB):
       index.json           build meta + per-book counts (88 books)
       sources.json         { talkId: {c,sp,ti,d,lbl,url?} }
-      citations/{slug}.json { cites:{citId:{t,v,sn,a?}}, index:{chap:{verse:[citId]}} }
+      citations/{slug}.json { cites:{citId:{t,v,sn,a?}}, index:{chap:{verse:[citId]}} } (sn for STPJS `T` cites = the referenced body passage, not the reference line)
       talks/{talkId}.html.gz gzipped offline text for JoD / pre-1971 GC / Joseph Smith
-  options/                 options.html/js/css — api.bible key, versions, panel width
+  options/                 options.html/js/css — api.bible key, versions, panel width, citation layout (verse/source)
 icons/                     icon-{16,32,48,128}.png (generated by tools/make-icons.js)
 tools/
-  build-citation-data.js   builds src/citations/data/ from the app DBs (node:sqlite + zlib); ALL_VOLUMES = {1..5}
+  build-citation-data.js   builds src/citations/data/ from the app DBs (node:sqlite + zlib); ALL_VOLUMES = {1..5}; extractCitation handles STPJS footnotes; guards require.main + module.exports { extractCitation, stpjsBodyPassage, … }
+  rederive-js-snippets.js  rewrites STPJS (corpus T) snippets from the shipped talks/*.html.gz (no DBs needed)
   validate-books.js        asserts the 66-book Bible map + manifest file refs
   validate-citations.js    asserts generated citation data integrity (>= 88 books)
   make-icons.js            regenerates icons
@@ -99,6 +103,12 @@ source-data/               GITIGNORED build input: core.53.db / content.53.db
   Discourses", T under "Teachings of the Prophet Joseph Smith".
 - Citations are marked in talk HTML as `<span class="citation" id="{citation.ID}">`;
   modern-GC paragraphs carry `uri=".../slug.p21"` → deep-link anchors.
+- **STPJS (`T`) markup differs:** citations sit in a bottom footnote list
+  (`<div class="footnote">N. <span class="citation" id="{citId}">…refs…</span></div>`)
+  with body markers `<span class="footRef">N</span>`. The snippet and the reader's
+  scroll target use the **body passage** that footnote N annotates (sentence around the
+  matching `footRef`), via `stpjsBodyPassage`. JoD/GC carry inline citation spans, so
+  their snippets/scroll were already correct.
 - DB `book.Abbr` == our LDS slug after `space→hyphen` normalization for nearly all
   books; the one alias is **D&C `sec` → `dc`** (`ABBR_ALIAS` in the build). D&C
   "chapters" are section numbers (1–138); collection URL segment is `dc-testament`.
@@ -118,12 +128,19 @@ source-data/               GITIGNORED build input: core.53.db / content.53.db
   source-type dropdown → a talk to read inline. Also works on non-Bible books
   (e.g. `bofm/alma/5`, `dc-testament/dc/76`, `pgp/moses/1`) where only Citations
   shows. In the reader, select text to make a local highlight (click it to remove).
+  The layout (by verse / by source) is set in options (`citationView`); a ranged
+  citation appears once at the first verse of each contiguous range it cites.
 - **Regenerate citation data** (DBs must be in `source-data/`):
   ```
   node --experimental-sqlite tools/build-citation-data.js   # reads source-data/ by default
   node tools/validate-citations.js
   ```
   Inspect raw DBs first with `--inspect` if formats may have changed.
+- **Regenerate only STPJS snippets** from shipped data (no DBs needed):
+  ```
+  node tools/rederive-js-snippets.js
+  node tools/validate-citations.js
+  ```
 - **Checks:** `node tools/validate-books.js`, `node tools/validate-citations.js`;
   syntax: `node --check <file>` (no test runner).
 
@@ -139,7 +156,13 @@ source-data/               GITIGNORED build input: core.53.db / content.53.db
   `dc-testament/dc/{section}` shape are assumed from convention — confirm on a live
   page; `detect.parseLocation` gates on `BOOKS.isKnownBook`.
 - Live-GC paragraph scroll is best-effort (matches the paragraph anchor); bundled
-  E/J/T scroll to the exact citation span.
+  J/E scroll to the exact citation span, STPJS (`T`) scrolls to the cited **body
+  passage** (the paragraph holding the matching `footRef`), not the footnote-list span.
+- Citation counts are unique: the headline = distinct citations in the chapter
+  (`uniqueTotal`); a verse chip = distinct citations anchored at that verse. A ranged
+  citation is anchored at the first verse of each contiguous run (`anchorVerses` in
+  cit-panel), so it's not repeated under every verse. The by-source layout dedupes to
+  one row per talk (newest-first), tagged with `verseLabel`; both layouts start collapsed.
 - Panel width persists in `settings.sidebarWidth` (sync). A width-only change skips
   the heavy translation re-render (`sameExceptWidth` in `content.js`).
 - SPA navigation is debounced via `currentKey` in `content.js`; mode toggles re-render
@@ -150,10 +173,14 @@ source-data/               GITIGNORED build input: core.53.db / content.53.db
 - The history hook loads `page-hook.js` via `chrome.runtime.getURL` (the page CSP
   allow-lists our extension origin in `script-src`), not an inline script — avoids
   CSP violations and keeps instant nav detection; the 750ms poll is the fallback.
-- The panel pins to `top:0` and its header mirrors the site's sticky-toolbar grey
-  (`--btx-header-bg` from `theme.captureHeaderBg`, exact if a solid `<header>` bg
-  is readable, else a derived shade) so the title bar lines up with the site's icon
-  row. It stays put when the site header expands (it doesn't track it).
+- The panel pins to `top:0`; its header height matches the site's sticky toolbar via
+  `--btx-header-h` (`theme.captureHeaderHeight`, cached once found) and its bg mirrors
+  the toolbar grey via `--btx-header-bg` (`theme.captureHeaderBg`, exact if a solid
+  `<header>` bg is readable, else a derived shade) so the title bar lines up with the
+  site's icon row. The toolbar may not be laid out at first paint, so
+  `content.js applyThemeUntilAligned` re-applies the theme on a short backoff until
+  `theme.headerHeightKnown()` — otherwise the bars misalign until a resize. It stays
+  put when the site header expands (it doesn't track it).
 - Commits here are unsigned (no signing key in the container) → GitHub shows
   "Unverified"; author email is `noreply@anthropic.com`. The git proxy port rotates
   and occasionally drops — retry pushes; clear any stale `remote.origin.pushurl`.
