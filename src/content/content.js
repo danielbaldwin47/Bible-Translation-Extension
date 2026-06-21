@@ -33,6 +33,8 @@
   let isBibleCurrent = true; // current page has translations (OT/NT)?
   let scrollToSnippet = true; // open sources scrolled to the cited paragraph
   let citationView = 'source'; // citations layout: 'source' | 'verse'
+  let showCitationToggle = true; // show the layout sub-toggle in the sidebar
+  let suppressNextViewRender = false; // sidebar toggle persists -> skip the echo re-render
   let citCache = null; // { key, node, scrollTop } — preserves the citations view
   let transCache = null; // { key, node, footer, scrollTop } — preserves translation view
 
@@ -138,6 +140,7 @@
     panel.setTitle(refLabel(parsed));
     panel.setBibleMode(isBibleCurrent);
     panel.setMode(effectiveMode());
+    panel.setCitationView(citationView);
 
     await renderActiveMode();
   }
@@ -320,6 +323,12 @@
     try { chrome.storage.sync.set({ [C.SETTINGS_KEY]: s }); } catch (e) { /* ignore */ }
   }
 
+  async function persistCitationView(view) {
+    const s = await getSyncSettings();
+    s.citationView = view;
+    try { chrome.storage.sync.set({ [C.SETTINGS_KEY]: s }); } catch (e) { /* ignore */ }
+  }
+
   // True if two settings objects differ only in sidebarWidth (so a width change
   // doesn't trigger a full translation re-render).
   function sameExceptWidth(a, b) {
@@ -348,6 +357,16 @@
         panel.setMode(m);
         renderActiveMode();
       },
+      onCitationViewChange: (view) => {
+        const v = view === 'verse' ? 'verse' : 'source';
+        if (v === citationView) return;
+        if (effectiveMode() !== 'citations') return; // toggle only acts in citations mode
+        citationView = v;
+        panel.setCitationView(v);
+        suppressNextViewRender = true; // our own storage write shouldn't double-render
+        persistCitationView(v);
+        renderCitations(current); // cache miss on the new key -> fresh render now (resets scroll to top)
+      },
       onResizeEnd: (px) => persistWidth(px),
     });
 
@@ -356,6 +375,9 @@
     if (initSettings.sidebarWidth) applyWidth(initSettings.sidebarWidth);
     scrollToSnippet = initSettings.scrollToSnippet !== false;
     citationView = initSettings.citationView === 'verse' ? 'verse' : 'source';
+    showCitationToggle = initSettings.showCitationToggle !== false;
+    panel.setCitationToggleEnabled(showCitationToggle);
+    panel.setCitationView(citationView);
 
     detect.setupNavigation(() => render());
 
@@ -372,6 +394,10 @@
         if (nv.sidebarWidth !== ov.sidebarWidth) applyWidth(nv.sidebarWidth);
         scrollToSnippet = nv.scrollToSnippet !== false;
         citationView = nv.citationView === 'verse' ? 'verse' : 'source';
+        panel.setCitationView(citationView);
+        const showTgl = nv.showCitationToggle !== false;
+        if (showTgl !== showCitationToggle) { showCitationToggle = showTgl; panel.setCitationToggleEnabled(showTgl); }
+        if (suppressNextViewRender) { suppressNextViewRender = false; return; } // sidebar toggle already rendered
         if (sameExceptWidth(ov, nv)) return;
         enabled = null;
         currentKey = null; // force a re-render with the new settings

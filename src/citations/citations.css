@@ -29,6 +29,37 @@
   color: #fff;
 }
 
+/* Citation-layout sub-toggle (By source | By verse). Shown only in citations
+   mode; hidden when the user disables it in settings. Lighter/pill look so it
+   reads as a sub-control under the primary mode toggle (active = accent outline). */
+#btx-root .btx-cit-modes {
+  display: none;                 /* shown only in citations mode (rule below) */
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--btx-border);
+  flex: 0 0 auto;
+}
+#btx-root[data-btx-mode='citations'] .btx-cit-modes { display: flex; }
+/* MUST stay after the rule above: equal specificity, so source order wins. */
+#btx-root.btx-cit-toggle-off .btx-cit-modes { display: none; }
+#btx-root .btx-cit-mode {
+  flex: 1;
+  appearance: none;
+  border: 1px solid var(--btx-border);
+  background: transparent;
+  color: var(--btx-muted);
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+#btx-root .btx-cit-mode.btx-active {
+  color: var(--btx-accent);
+  border-color: var(--btx-accent);
+  font-weight: 600;
+}
+
 /* ---- Citation list (accordion: verse -> source type -> talks) ---- */
 #btx-root .btx-cit-summary {
   font-size: 12px;
