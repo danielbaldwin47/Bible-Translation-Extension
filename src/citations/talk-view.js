@@ -130,6 +130,67 @@
 
   function cssId(s) { return String(s).replace(/["\\]/g, '\\$&'); }
 
+  // Pre-Oct-2013 GC talks were stored without their session segment, e.g.
+  // /study/ensign/2012/11/temple-standard. The site now 302s those to the
+  // conference landing page (/study/ensign/2012/11), so a plain fetch silently
+  // renders the wrong page. resolvedUrlCache memoizes the recovered session-
+  // qualified URL per original so we only resolve once per session.
+  const resolvedUrlCache = new Map();
+
+  function lastSlug(pathname) {
+    return String(pathname).replace(/\/+$/, '').split('/').pop() || '';
+  }
+
+  // Fetch a live church talk, recovering from the pre-2013 session-less redirect.
+  // Returns { html, url }: html is the talk's HTML (null if it couldn't be loaded),
+  // url is the effective talk URL (resolved when a redirect was repaired). Never throws.
+  async function fetchLiveTalk(originalUrl) {
+    const target = resolvedUrlCache.get(originalUrl) || originalUrl;
+    let res;
+    try { res = await fetch(target, { credentials: 'omit' }); }
+    catch (e) { return { html: null, url: originalUrl }; }
+    if (!res.ok) return { html: null, url: res.url };
+
+    const orig = new URL(originalUrl, location.origin);
+    const slug = lastSlug(orig.pathname);
+    const landed = new URL(res.url, location.origin);
+
+    // Common case (post-2013, or an already-resolved cache hit): not bounced.
+    if (resolvedUrlCache.has(originalUrl) || lastSlug(landed.pathname) === slug) {
+      return { html: await res.text(), url: res.url };
+    }
+
+    // Bounced to the conference landing page: find the session-qualified link for
+    // our slug in its table of contents (.../{year}/{month}/{session}/{slug}).
+    const dir = orig.pathname.replace(/\/[^/]+\/?$/, ''); // /study/ensign/2012/11
+    let realUrl = null;
+    try {
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+      for (const a of doc.querySelectorAll('a[href]')) {
+        let p;
+        try { p = new URL(a.getAttribute('href'), res.url); } catch (e) { continue; }
+        if (p.origin !== location.origin) continue;
+        const path = p.pathname.replace(/\/+$/, '');
+        if (!path.startsWith(dir + '/') || path === dir + '/' + slug) continue; // skip the self-link
+        const rest = path.slice(dir.length + 1).split('/'); // [session, slug]
+        if (rest.length === 2 && rest[1] === slug) {
+          const u = new URL(path, location.origin);
+          u.search = orig.search; // preserve ?lang=eng
+          realUrl = u.href;
+          break;
+        }
+      }
+    } catch (e) { /* fall through */ }
+    if (!realUrl) return { html: null, url: res.url }; // couldn't resolve -> bundled/CTA fallback
+
+    let res2;
+    try { res2 = await fetch(realUrl, { credentials: 'omit' }); }
+    catch (e) { return { html: null, url: realUrl }; }
+    if (!res2.ok) return { html: null, url: res2.url };
+    resolvedUrlCache.set(originalUrl, realUrl);
+    return { html: await res2.text(), url: res2.url };
+  }
+
   // Deep-link to a live church talk paragraph: "...&id=pN#pN" scrolls to and
   // highlights that paragraph on churchofjesuschrist.org.
   function fullTalkUrl(url, anchor) {
@@ -155,12 +216,14 @@
     meta.appendChild(el('div', 'btx-talk-sub', [source.sp, source.lbl].filter(Boolean).join(' · ')));
     header.appendChild(meta);
     // Subtle "open full talk" link, top-right, for live General Conference.
+    let fullTalkLink = null;
     if (source.url) {
       const a = el('a', 'btx-talk-source', 'Open full talk ↗');
       a.href = autoScroll ? fullTalkUrl(source.url, entry.anchor) : source.url;
       a.target = '_blank'; a.rel = 'noopener';
       a.title = 'Open the full talk on churchofjesuschrist.org';
       header.appendChild(a);
+      fullTalkLink = a;
     }
     bodyEl.appendChild(header);
 
@@ -170,10 +233,16 @@
 
     let html = null;
     let live = false;
+    let resolvedUrl = source.url || null;
     try {
-      if (source.url) { // modern GC: live, same-origin
-        const res = await fetch(source.url, { credentials: 'omit' });
-        if (res.ok) { html = await res.text(); live = true; }
+      if (source.url) { // modern GC: live, same-origin (repairs the pre-2013 redirect)
+        const r = await fetchLiveTalk(source.url);
+        if (r.html != null) { html = r.html; live = true; }
+        resolvedUrl = r.url || source.url;
+        // Point the header link at the recovered URL (the stored one may 302 away).
+        if (fullTalkLink) {
+          fullTalkLink.href = autoScroll ? fullTalkUrl(resolvedUrl, entry.anchor) : resolvedUrl;
+        }
       }
       if (html == null) { // bundled fallback (E/J/T, or G whose live fetch failed)
         html = await citData().loadTalkHtml(entry.talkId);
@@ -185,7 +254,7 @@
       body.appendChild(el('p', 'btx-state-text', 'Could not load this source.'));
       if (source.url) {
         const a = el('a', 'btx-cta', 'Open on churchofjesuschrist.org');
-        a.href = source.url; a.target = '_blank'; a.rel = 'noopener';
+        a.href = resolvedUrl || source.url; a.target = '_blank'; a.rel = 'noopener';
         body.appendChild(a);
       }
       return;

@@ -86,7 +86,7 @@
         actOnNonEngOnly: true,
         sidebarWidth: 380, // panel width in px (also adjustable by dragging)
         scrollToSnippet: true, // open sources scrolled to the cited paragraph
-        citationView: 'verse', // citations layout: 'verse' (group by verse) | 'source' (group by source)
+        citationView: 'source', // citations layout: 'source' (group by source) | 'verse' (group by verse)
       };
     },
 

@@ -7,7 +7,7 @@
 #btx-root {
   --btx-top: 0px;               /* header pins to the site's sticky toolbar band */
   --btx-width: 380px;
-  --btx-header-h: 3rem;         /* matched to the site toolbar by theme.js when found */
+  --btx-header-h: 44px;         /* matched to the site toolbar by theme.js when found */
   --btx-bg: #ffffff;
   --btx-header-bg: #f0f0f0;
   --btx-fg: #2a2a2a;

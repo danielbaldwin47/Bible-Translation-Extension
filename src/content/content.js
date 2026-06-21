@@ -32,7 +32,7 @@
   let mode = 'translation'; // user's preferred mode on Bible chapters
   let isBibleCurrent = true; // current page has translations (OT/NT)?
   let scrollToSnippet = true; // open sources scrolled to the cited paragraph
-  let citationView = 'verse'; // citations layout: 'verse' | 'source'
+  let citationView = 'source'; // citations layout: 'source' | 'verse'
   let citCache = null; // { key, node, scrollTop } — preserves the citations view
   let transCache = null; // { key, node, footer, scrollTop } — preserves translation view
 
@@ -355,7 +355,7 @@
     const initSettings = await getSyncSettings();
     if (initSettings.sidebarWidth) applyWidth(initSettings.sidebarWidth);
     scrollToSnippet = initSettings.scrollToSnippet !== false;
-    citationView = initSettings.citationView === 'source' ? 'source' : 'verse';
+    citationView = initSettings.citationView === 'verse' ? 'verse' : 'source';
 
     detect.setupNavigation(() => render());
 
@@ -371,7 +371,7 @@
         const ov = changes[C.SETTINGS_KEY].oldValue || {};
         if (nv.sidebarWidth !== ov.sidebarWidth) applyWidth(nv.sidebarWidth);
         scrollToSnippet = nv.scrollToSnippet !== false;
-        citationView = nv.citationView === 'source' ? 'source' : 'verse';
+        citationView = nv.citationView === 'verse' ? 'verse' : 'source';
         if (sameExceptWidth(ov, nv)) return;
         enabled = null;
         currentKey = null; // force a re-render with the new settings
