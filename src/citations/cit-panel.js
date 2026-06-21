@@ -93,6 +93,20 @@
     return da < db ? 1 : -1;
   }
 
+  // By first cited in-chapter verse, lowest at the top. versesInChapter is
+  // ascending, so [0] is the first verse of the (possibly ranged) citation; ties
+  // fall through to the rest of the range, then newest-first for identical ranges.
+  function byFirstVerse(a, b) {
+    const va = a.versesInChapter || [];
+    const vb = b.versesInChapter || [];
+    const n = Math.min(va.length, vb.length);
+    for (let i = 0; i < n; i++) {
+      if (va[i] !== vb[i]) return va[i] - vb[i];
+    }
+    if (va.length !== vb.length) return va.length - vb.length;
+    return byDateDesc(a, b);
+  }
+
   // One talk row. opts.rangeLabel adds a verse/range badge (e.g. "vv. 3–6, 10–11")
   // for spanning citations and the by-source view.
   function entryRow(entry, onOpenTalk, opts) {
@@ -155,12 +169,13 @@
   }
 
   // Layout 'source': one deduped row per source, grouped by source type, each
-  // tagged with the verse/range it cites. Collapsed by default (like by-verse).
+  // tagged with the verse/range it cites. Within each type, rows are ordered by
+  // the first verse they cite (lowest at top). Collapsed by default (like by-verse).
   function renderBySource(wrap, data, fullName, chapter, onOpenTalk) {
     wrap.appendChild(el('div', 'btx-cit-summary',
       `${data.uniqueTotal} source${data.uniqueTotal === 1 ? '' : 's'} cite ${fullName || ''} ${chapter}`.trim()));
 
-    const all = Object.values(data.entries).sort(byDateDesc);
+    const all = Object.values(data.entries).sort(byFirstVerse);
     for (const g of GROUPS) {
       const items = all.filter((e) => g.corpora.includes((e.source || {}).c));
       if (!items.length) continue;
