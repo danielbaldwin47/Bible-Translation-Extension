@@ -162,7 +162,8 @@ source-data/               GITIGNORED build input: core.53.db / content.53.db
   (`uniqueTotal`); a verse chip = distinct citations anchored at that verse. A ranged
   citation is anchored at the first verse of each contiguous run (`anchorVerses` in
   cit-panel), so it's not repeated under every verse. The by-source layout dedupes to
-  one row per talk (newest-first), tagged with `verseLabel`; both layouts start collapsed.
+  one row per talk (ordered by first cited verse, lowest at top — `byFirstVerse`), tagged
+  with `verseLabel`; both layouts start collapsed.
 - Panel width persists in `settings.sidebarWidth` (sync). A width-only change skips
   the heavy translation re-render (`sameExceptWidth` in `content.js`).
 - SPA navigation is debounced via `currentKey` in `content.js`; mode toggles re-render
