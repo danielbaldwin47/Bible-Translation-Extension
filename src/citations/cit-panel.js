@@ -133,7 +133,9 @@
 
   // Layout 'verse': verse -> source type -> talks. A spanning citation is shown
   // once at the first verse of each contiguous range it cites (anchorVerses), and
-  // carries a badge of its full coverage (e.g. "vv. 3–6, 10–11").
+  // carries a badge of its full coverage (e.g. "vv. 3–6, 10–11"). When a verse has
+  // a single source, its source-type group is pre-opened so one click on the verse
+  // reveals the talk directly.
   function renderByVerse(wrap, data, fullName, chapter, focusVerse, onOpenTalk) {
     let focusEl = null;
     wrap.appendChild(el('div', 'btx-cit-summary',
@@ -155,6 +157,9 @@
         if (!items.length) continue;
         const cgroup = el('details', 'btx-cit-cgroup');
         cgroup.appendChild(summaryRow('btx-cit-chead', g.label, items.length, `btx-grp-${g.key}`));
+        // Single source on this verse: open the source-type group so one click on
+        // the verse reveals the talk (no second click on the source-type row).
+        if (entries.length === 1) cgroup.open = true;
         for (const entry of items) {
           const multi = entry.versesInChapter.length > 1;
           cgroup.appendChild(entryRow(entry, onOpenTalk, multi ? { rangeLabel: verseLabel(entry.versesInChapter) } : undefined));

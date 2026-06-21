@@ -23,6 +23,7 @@
     actOnNonEngOnly: $('actOnNonEngOnly'),
     scrollToSnippet: $('scrollToSnippet'),
     citationView: $('citationView'),
+    showCitationToggle: $('showCitationToggle'),
     sidebarWidth: $('sidebarWidth'),
     sidebarWidthOut: $('sidebarWidthOut'),
     save: $('save'),
@@ -137,6 +138,7 @@
       actOnNonEngOnly: els.actOnNonEngOnly.checked,
       scrollToSnippet: els.scrollToSnippet.checked,
       citationView: els.citationView.value === 'source' ? 'source' : 'verse',
+      showCitationToggle: els.showCitationToggle.checked,
       sidebarWidth: Number(els.sidebarWidth.value) || 380,
     };
     await chrome.storage.sync.set({ [C.SETTINGS_KEY]: next });
@@ -153,6 +155,7 @@
     els.actOnNonEngOnly.checked = settings.actOnNonEngOnly !== false;
     els.scrollToSnippet.checked = settings.scrollToSnippet !== false;
     els.citationView.value = settings.citationView === 'source' ? 'source' : 'verse';
+    els.showCitationToggle.checked = settings.showCitationToggle !== false;
 
     const w = Number(settings.sidebarWidth) || 380;
     els.sidebarWidth.value = String(w);

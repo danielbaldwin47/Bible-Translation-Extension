@@ -60,6 +60,14 @@
     modes.appendChild(modeTranslation);
     modes.appendChild(modeCitations);
 
+    // Citation-layout sub-toggle: By source | By verse (shown only in citations
+    // mode; CSS-gated off data-btx-mode, hidden via .btx-cit-toggle-off setting).
+    const citModes = el('div', 'btx-cit-modes');
+    const citViewSource = el('button', 'btx-cit-mode btx-active', 'By source');
+    const citViewVerse = el('button', 'btx-cit-mode', 'By verse');
+    citModes.appendChild(citViewSource);
+    citModes.appendChild(citViewVerse);
+
     const body = el('div', 'btx-body');
     const footer = el('div', 'btx-footer');
 
@@ -70,6 +78,7 @@
     panel.appendChild(resize);
     panel.appendChild(header);
     panel.appendChild(modes);
+    panel.appendChild(citModes);
     panel.appendChild(body);
     panel.appendChild(footer);
 
@@ -93,6 +102,8 @@
     tab.addEventListener('click', () => setCollapsed(false));
     modeTranslation.addEventListener('click', () => cbs.onModeChange && cbs.onModeChange('translation'));
     modeCitations.addEventListener('click', () => cbs.onModeChange && cbs.onModeChange('citations'));
+    citViewSource.addEventListener('click', () => cbs.onCitationViewChange && cbs.onCitationViewChange('source'));
+    citViewVerse.addEventListener('click', () => cbs.onCitationViewChange && cbs.onCitationViewChange('verse'));
     resize.addEventListener('pointerdown', onResizeDown);
     // Show the scrollbar while scrolling, fade it ~1s after it stops.
     body.addEventListener('scroll', () => {
@@ -101,7 +112,7 @@
       scrollFadeTimer = setTimeout(() => body.classList.remove('btx-scrolling'), 1000);
     }, { passive: true });
 
-    ui = { rootEl, panel, header, title, select, modes, modeTranslation, modeCitations, body, footer, tab, resize };
+    ui = { rootEl, panel, header, title, select, modes, modeTranslation, modeCitations, citModes, citViewSource, citViewVerse, body, footer, tab, resize };
     return ui;
   }
 
@@ -325,11 +336,26 @@
     if (cit) detachScrollSync();
   }
 
+  // Highlight the active segment of the citation-layout sub-toggle.
+  function setCitationView(view) {
+    ensureRoot();
+    const verse = view === 'verse';
+    ui.citViewVerse.classList.toggle('btx-active', verse);
+    ui.citViewSource.classList.toggle('btx-active', !verse);
+  }
+
+  // Settings: whether the citation-layout sub-toggle is shown at all.
+  function setCitationToggleEnabled(on) {
+    ensureRoot();
+    ui.rootEl.classList.toggle('btx-cit-toggle-off', on === false);
+  }
+
   root.__BTX = Object.assign(root.__BTX || {}, {
     panel: {
       ensureRoot, setHandlers, setVisible, setCollapsed, isCollapsed, setTitle,
       populateTranslations, renderLoading, renderNoKey, renderError, renderContent,
       reattachContent, getRootEl, getBodyEl, setMode, setWidth, setBibleMode,
+      setCitationView, setCitationToggleEnabled,
     },
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
