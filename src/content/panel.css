@@ -130,10 +130,20 @@
   cursor: pointer;
   padding: 4px 6px;
   border-radius: 6px;
+  transition: background 0.12s, color 0.12s;
 }
 #btx-root .btx-btn:hover {
   color: var(--btx-fg);
   background: var(--btx-border);
+}
+
+/* Consistent keyboard-focus ring on every interactive control in the panel. */
+#btx-root button:focus-visible,
+#btx-root select:focus-visible,
+#btx-root input:focus-visible,
+#btx-root a:focus-visible {
+  outline: 2px solid var(--btx-accent);
+  outline-offset: 1px;
 }
 
 /* ---- Body / content ---- */
@@ -229,6 +239,7 @@
   padding: 8px 14px;
   border-radius: 8px;
   cursor: pointer;
+  transition: filter 0.12s;
 }
 #btx-root .btx-cta:hover { filter: brightness(1.08); }
 
@@ -261,6 +272,7 @@
   font-size: 13px;
   letter-spacing: 0.04em;
   cursor: pointer;
+  box-shadow: -2px 2px 8px rgba(0, 0, 0, 0.18);
 }
 
 #btx-root.btx-collapsed { width: auto; }

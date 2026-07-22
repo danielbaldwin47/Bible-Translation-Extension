@@ -113,6 +113,8 @@
     opts = opts || {};
     const s = entry.source || {};
     const row = el('div', 'btx-cit');
+    // Haystack for the in-panel filter box (see attachTools).
+    row.dataset.btxSearch = [s.sp, s.ti, s.lbl, entry.snippet].filter(Boolean).join(' ').toLowerCase();
     const head = el('div', 'btx-cit-head');
     const left = el('div', 'btx-cit-headl');
     left.appendChild(el('span', 'btx-cit-speaker', s.sp || 'Unknown'));
@@ -138,9 +140,6 @@
   // reveals the talk directly.
   function renderByVerse(wrap, data, fullName, chapter, focusVerse, onOpenTalk) {
     let focusEl = null;
-    wrap.appendChild(el('div', 'btx-cit-summary',
-      `${data.uniqueTotal} citation${data.uniqueTotal === 1 ? '' : 's'} in ${fullName || ''} ${chapter}`.trim()));
-
     for (const v of data.verseOrder) {
       const ids = data.byVerse[v] || [];
       const entries = ids
@@ -177,9 +176,6 @@
   // tagged with the verse/range it cites. Within each type, rows are ordered by
   // the first verse they cite (lowest at top). Collapsed by default (like by-verse).
   function renderBySource(wrap, data, fullName, chapter, onOpenTalk) {
-    wrap.appendChild(el('div', 'btx-cit-summary',
-      `${data.uniqueTotal} source${data.uniqueTotal === 1 ? '' : 's'} cite ${fullName || ''} ${chapter}`.trim()));
-
     const all = Object.values(data.entries).sort(byFirstVerse);
     for (const g of GROUPS) {
       const items = all.filter((e) => g.corpora.includes((e.source || {}).c));
@@ -196,6 +192,72 @@
     return null;
   }
 
+  // Toolbar above the list: a live filter box (speaker / title / snippet) and an
+  // expand-all / collapse-all button. Filtering hides non-matching talk rows and
+  // any group left empty, and opens the remaining groups so matches are visible;
+  // clearing the box restores each group's pre-filter open state.
+  function attachTools(wrap, tools) {
+    const input = el('input', 'btx-cit-filter');
+    input.type = 'search';
+    input.placeholder = 'Filter by speaker, title, or text…';
+    input.setAttribute('aria-label', 'Filter citations');
+    const toggleAll = el('button', 'btx-cit-toolbtn', 'Expand all');
+    toggleAll.type = 'button';
+    tools.appendChild(input);
+    tools.appendChild(toggleAll);
+    const noRes = el('p', 'btx-state-text btx-cit-noresults', 'No citations match.');
+    noRes.style.display = 'none';
+
+    const groups = () => Array.from(wrap.querySelectorAll('details'));
+    const rows = () => Array.from(wrap.querySelectorAll('.btx-cit'));
+    let preFilterOpen = null; // Map<details, bool> captured when a filter begins
+
+    function applyFilter() {
+      const q = input.value.trim().toLowerCase();
+      const filtering = q.length > 0;
+      if (filtering && !preFilterOpen) {
+        preFilterOpen = new Map();
+        for (const d of groups()) preFilterOpen.set(d, d.open);
+      }
+      let any = false;
+      for (const row of rows()) {
+        const hit = !filtering || (row.dataset.btxSearch || '').includes(q);
+        row.classList.toggle('btx-cit-hidden', !hit);
+        if (hit) any = true;
+      }
+      for (const d of groups()) {
+        const visible = !filtering || !!d.querySelector('.btx-cit:not(.btx-cit-hidden)');
+        d.classList.toggle('btx-cit-hidden', !visible);
+        if (filtering && visible) d.open = true;
+      }
+      if (!filtering && preFilterOpen) {
+        for (const d of groups()) { if (preFilterOpen.has(d)) d.open = preFilterOpen.get(d); }
+        preFilterOpen = null;
+      }
+      noRes.style.display = filtering && !any ? '' : 'none';
+      updateToggleLabel();
+    }
+
+    function updateToggleLabel() {
+      const open = groups().filter((d) => !d.classList.contains('btx-cit-hidden'));
+      toggleAll.textContent = open.some((d) => !d.open) ? 'Expand all' : 'Collapse all';
+    }
+
+    input.addEventListener('input', applyFilter);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && input.value) { e.stopPropagation(); input.value = ''; applyFilter(); }
+    });
+    toggleAll.addEventListener('click', () => {
+      const visible = groups().filter((d) => !d.classList.contains('btx-cit-hidden'));
+      const expand = visible.some((d) => !d.open);
+      for (const d of visible) d.open = expand;
+      updateToggleLabel();
+    });
+    // 'toggle' doesn't bubble, but capture listeners on ancestors still see it.
+    wrap.addEventListener('toggle', updateToggleLabel, true);
+    return noRes;
+  }
+
   // Render the chapter's citations into bodyEl. Builds into a single wrapper that
   // is returned, so the orchestrator can cache + re-attach it (preserving scroll
   // and which dropdowns are open) when toggling between modes.
@@ -203,21 +265,36 @@
   async function render(bodyEl, opts) {
     const { slug, chapter, fullName, focusVerse, onOpenTalk, view } = opts;
     bodyEl.textContent = '';
-    bodyEl.appendChild(el('div', 'btx-state-text btx-cit-loading', 'Loading citations…'));
+    const loading = el('div', 'btx-state btx-loading');
+    loading.appendChild(el('div', 'btx-spinner'));
+    loading.appendChild(el('div', 'btx-state-text', 'Loading citations…'));
+    bodyEl.appendChild(loading);
 
     const data = await citData().chapterData(slug, chapter);
 
     const wrap = el('div', 'btx-cit-list');
     let focusEl = null;
 
-    if (!data) {
-      wrap.appendChild(el('p', 'btx-state-text', 'No citation data for this book.'));
-    } else if (!data.verseOrder.length || data.uniqueTotal === 0) {
-      wrap.appendChild(el('p', 'btx-state-text', `No talks cite ${fullName || ''} ${chapter}.`.trim()));
-    } else if (view === 'source') {
-      focusEl = renderBySource(wrap, data, fullName, chapter, onOpenTalk);
+    if (!data || !data.verseOrder.length || data.uniqueTotal === 0) {
+      const empty = el('div', 'btx-state');
+      empty.appendChild(el('p', 'btx-state-text', !data
+        ? 'No citation data for this book.'
+        : `No talks cite ${fullName || ''} ${chapter}.`.trim()));
+      wrap.appendChild(empty);
     } else {
-      focusEl = renderByVerse(wrap, data, fullName, chapter, focusVerse, onOpenTalk);
+      const noun = view === 'source' ? 'source' : 'citation';
+      const verb = view === 'source' ? (data.uniqueTotal === 1 ? ' cites' : ' cite') : ' in';
+      wrap.appendChild(el('div', 'btx-cit-summary',
+        `${data.uniqueTotal} ${noun}${data.uniqueTotal === 1 ? '' : 's'}${verb} ${fullName || ''} ${chapter}`.trim()));
+      let noRes = null;
+      if (data.uniqueTotal >= 4) {
+        const tools = el('div', 'btx-cit-tools');
+        wrap.appendChild(tools);
+        noRes = attachTools(wrap, tools);
+      }
+      if (view === 'source') focusEl = renderBySource(wrap, data, fullName, chapter, onOpenTalk);
+      else focusEl = renderByVerse(wrap, data, fullName, chapter, focusVerse, onOpenTalk);
+      if (noRes) wrap.appendChild(noRes);
     }
 
     bodyEl.textContent = '';
@@ -226,5 +303,5 @@
     return wrap;
   }
 
-  root.__BTX = Object.assign(root.__BTX || {}, { citPanel: { render } });
+  root.__BTX = Object.assign(root.__BTX || {}, { citPanel: { render, verseLabel } });
 })(typeof globalThis !== 'undefined' ? globalThis : this);
