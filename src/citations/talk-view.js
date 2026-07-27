@@ -106,7 +106,7 @@
     return null;
   }
 
-  function scrollToCitation(container, scrollEl, { citId, anchor }) {
+  function scrollToCitation(container, scrollEl, { citId, anchor, offset }) {
     let target = null;
     if (anchor) target = container.querySelector(`[id="${cssId(anchor)}"]`);
     if (!target && citId != null) {
@@ -122,7 +122,7 @@
     // relative to the fixed #btx-root, so use a viewport-rect delta instead.
     if (scrollEl) {
       const delta = target.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top;
-      scrollEl.scrollTop = Math.max(0, scrollEl.scrollTop + delta - 16);
+      scrollEl.scrollTop = Math.max(0, scrollEl.scrollTop + delta - (offset || 16));
     } else {
       target.scrollIntoView({ block: 'start' });
     }
@@ -200,6 +200,23 @@
     return `${base}${sep}id=${anchor}#${anchor}`;
   }
 
+  // Esc closes the reader (same as "‹ Back"). One document-level handler; rebound
+  // to the current reader on each open(), self-removing once its reader is gone.
+  let escHandler = null;
+  function bindEsc(backBtn) {
+    unbindEsc();
+    escHandler = (e) => {
+      if (e.key !== 'Escape') return;
+      if (!document.contains(backBtn)) { unbindEsc(); return; } // reader was replaced
+      e.preventDefault();
+      backBtn.click();
+    };
+    document.addEventListener('keydown', escHandler);
+  }
+  function unbindEsc() {
+    if (escHandler) { document.removeEventListener('keydown', escHandler); escHandler = null; }
+  }
+
   // Public: render a talk into `bodyEl`.
   // opts: { entry, source, onBack, autoScroll }
   async function open(bodyEl, opts) {
@@ -209,11 +226,22 @@
 
     const header = el('div', 'btx-talk-header');
     const back = el('button', 'btx-btn btx-talk-back', '‹ Back');
-    back.addEventListener('click', () => onBack && onBack());
+    back.addEventListener('click', () => { unbindEsc(); onBack && onBack(); });
+    back.title = 'Back to citations (Esc)';
     header.appendChild(back);
+    bindEsc(back);
     const meta = el('div', 'btx-talk-meta');
-    meta.appendChild(el('div', 'btx-talk-title', source.ti || 'Talk'));
-    meta.appendChild(el('div', 'btx-talk-sub', [source.sp, source.lbl].filter(Boolean).join(' · ')));
+    const titleEl = el('div', 'btx-talk-title', source.ti || 'Talk');
+    titleEl.title = source.ti || '';
+    meta.appendChild(titleEl);
+    // Keep the study context visible: which verse(s) this source cites.
+    const citPanel = root.__BTX.citPanel;
+    const verses = entry.versesInChapter && entry.versesInChapter.length && citPanel
+      ? 'cites ' + citPanel.verseLabel(entry.versesInChapter) : '';
+    const subText = [source.sp, source.lbl, verses].filter(Boolean).join(' · ');
+    const subEl = el('div', 'btx-talk-sub', subText);
+    subEl.title = subText; // header lines are single-line ellipsized
+    meta.appendChild(subEl);
     header.appendChild(meta);
     // Subtle "open full talk" link, top-right, for live General Conference.
     let fullTalkLink = null;
@@ -269,8 +297,13 @@
     // not the inner .btx-talk-scroll wrapper. Skipped when the user has turned off
     // "open scrolled to the cited snippet".
     if (autoScroll) {
+      // The reader header is sticky, so offset the scroll target below it.
       requestAnimationFrame(() => requestAnimationFrame(() =>
-        scrollToCitation(article, bodyEl, { citId: entry.citId, anchor: live ? entry.anchor : null })));
+        scrollToCitation(article, bodyEl, {
+          citId: entry.citId,
+          anchor: live ? entry.anchor : null,
+          offset: header.offsetHeight + 10,
+        })));
     }
   }
 

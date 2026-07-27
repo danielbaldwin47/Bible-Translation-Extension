@@ -28,6 +28,7 @@ body {
 .wrap { max-width: 640px; margin: 0 auto; padding: 28px 20px 60px; }
 h1 { font-size: 22px; margin: 0 0 4px; }
 h2 { font-size: 16px; margin: 0 0 12px; }
+.subhead { font-size: 13.5px; margin: 18px 0 8px; padding-top: 14px; border-top: 1px solid var(--border); }
 .lede { color: var(--muted); margin: 0 0 20px; }
 code { background: var(--border); padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
 
@@ -81,6 +82,11 @@ button.primary, button#testKey {
   color: #fff;
 }
 button.primary:hover, button#testKey:hover { filter: brightness(1.08); }
+
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 
 .radio, .check {
   display: flex;

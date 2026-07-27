@@ -146,6 +146,7 @@
     if (collapsed) detachScrollSync();
     else attachScrollSync();
     updatePageReserve();
+    cbs.onCollapsedChange && cbs.onCollapsedChange(!!collapsed);
   }
 
   function isCollapsed() {

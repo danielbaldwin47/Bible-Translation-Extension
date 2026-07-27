@@ -20,6 +20,7 @@
 
   const SELECTION_KEY = 'btxSelectedTranslation';
   const MODE_KEY = 'btxPanelMode';
+  const COLLAPSED_KEY = 'btxPanelCollapsed';
 
   let enabled = null; // { translations, defaultId, provider, hasKey }
   let selectedId = null;
@@ -368,9 +369,14 @@
         renderCitations(current); // cache miss on the new key -> fresh render now (resets scroll to top)
       },
       onResizeEnd: (px) => persistWidth(px),
+      onCollapsedChange: (collapsed) => {
+        try { chrome.storage.local.set({ [COLLAPSED_KEY]: collapsed }); } catch (e) { /* ignore */ }
+      },
     });
 
     mode = (await getStored(MODE_KEY)) === 'citations' ? 'citations' : 'translation';
+    // Restore how the user left the panel (collapsed to its edge tab, or open).
+    if ((await getStored(COLLAPSED_KEY)) === true) panel.setCollapsed(true);
     const initSettings = await getSyncSettings();
     if (initSettings.sidebarWidth) applyWidth(initSettings.sidebarWidth);
     scrollToSnippet = initSettings.scrollToSnippet !== false;

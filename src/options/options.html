@@ -3,24 +3,26 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Bible Translation Side-by-Side — Settings</title>
+  <title>Translations &amp; Citations — Settings</title>
   <link rel="stylesheet" href="options.css" />
 </head>
 <body>
   <main class="wrap">
-    <h1>Bible Translation Side-by-Side</h1>
+    <h1>Translations &amp; Citations</h1>
     <p class="lede">
-      Compare other Bible translations alongside the Gospel Library reader on
-      <code>churchofjesuschrist.org/study</code>.
+      Study companion for the Gospel Library reader on
+      <code>churchofjesuschrist.org/study</code>: side-by-side Bible translations,
+      plus the General Conference talks, Journal of Discourses sermons, and
+      Joseph Smith teachings that cite each verse.
     </p>
 
     <section class="card" id="keyCard">
-      <h2>1. API key</h2>
+      <h2>Bible translations</h2>
       <p class="hint">
-        Get a free key at
+        Powered by your own free key from
         <a href="https://scripture.api.bible/" target="_blank" rel="noopener">scripture.api.bible</a>
         (Starter plan, personal use). On the free plan you may add up to 3
-        copyrighted versions to your key.
+        copyrighted versions to your key. Citations work without a key.
       </p>
       <div class="row">
         <input type="password" id="apiKey" placeholder="Paste your api.bible key" autocomplete="off" />
@@ -28,31 +30,19 @@
         <button id="testKey" type="button">Test key</button>
       </div>
       <p id="keyStatus" class="status" aria-live="polite"></p>
-    </section>
 
-    <section class="card" id="translationsCard">
-      <h2>2. Translations to show</h2>
+      <h3 class="subhead" id="translationsCard">Versions to show</h3>
       <p class="hint" id="translationsHint">Test your key to load the versions you added.</p>
       <div id="translationsList" class="checklist"></div>
-    </section>
 
-    <section class="card" id="defaultCard">
-      <h2>3. Default translation</h2>
+      <h3 class="subhead" id="defaultCard">Default version</h3>
       <select id="defaultTranslation"></select>
     </section>
 
-    <section class="card">
-      <h2>4. Options</h2>
-      <label class="check">
-        <input type="checkbox" id="actOnNonEngOnly" />
-        <span>Only show the panel on English (<code>lang=eng</code>) pages</span>
-      </label>
-      <label class="check">
-        <input type="checkbox" id="scrollToSnippet" />
-        <span>Open sources scrolled to the cited snippet</span>
-      </label>
+    <section class="card" id="citationsCard">
+      <h2>Citations</h2>
       <div class="row" id="citationViewRow">
-        <label for="citationView">Citations layout</label>
+        <label for="citationView">Layout</label>
         <select id="citationView">
           <option value="verse">Sort by verse</option>
           <option value="source">Sort by source</option>
@@ -67,12 +57,24 @@
         <input type="checkbox" id="showCitationToggle" />
         <span>Show the layout toggle in the sidebar</span>
       </label>
+      <label class="check">
+        <input type="checkbox" id="scrollToSnippet" />
+        <span>Open sources scrolled to the cited snippet</span>
+      </label>
+    </section>
+
+    <section class="card" id="panelCard">
+      <h2>Panel</h2>
       <div class="row" id="widthRow">
-        <label for="sidebarWidth">Panel width</label>
+        <label for="sidebarWidth">Width</label>
         <input type="range" id="sidebarWidth" min="280" max="900" step="10" />
         <output id="sidebarWidthOut">380px</output>
       </div>
       <p class="hint">You can also drag the panel's left edge to resize it.</p>
+      <label class="check">
+        <input type="checkbox" id="actOnNonEngOnly" />
+        <span>Only show the panel on English (<code>lang=eng</code>) pages</span>
+      </label>
     </section>
 
     <div class="actions">
