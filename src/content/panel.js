@@ -19,9 +19,12 @@
  *   citationView()                 'source' | 'verse'
  *   showView({ name, key, cache, render })  mount the named view; see the view
  *                                  host section below. Returns render's result.
- *   scrollIntoView(target, { offset, frames })  scroll the body to a node
- *                                  inside the mounted view (instant: callers
- *                                  reveal a target as part of opening a view)
+ *   scrollIntoView(target, { clearTop, frames })  reveal a node inside the
+ *                                  mounted view — near the middle of the body,
+ *                                  so the text leading into it is visible, and
+ *                                  clear of any sticky chrome the caller
+ *                                  declares (instant: callers reveal a target
+ *                                  as part of opening a view)
  *   showTranslation(state)         render a translation-mode body state into
  *                                  the mounted view:
  *                                    { kind:'loading', label }
@@ -307,6 +310,56 @@
     return rampOpen && stalled;
   }
 
+  // ---- Where a revealed target lands ---------------------------------------
+  // Opening a citation is a reading task, not a navigation one: the cited
+  // sentence usually sits mid-paragraph, so parking it at the very top of the
+  // panel hides the run-up to it and the reader has to scroll back for the
+  // context they opened the thing to see. So a revealed target lands near the
+  // vertical *middle* of the visible body instead, with the lead-in above it.
+  //
+  // The gap above is a fraction of the body's own height rather than a pixel
+  // count, so it holds at any panel width or window height. Slightly above
+  // centre: a citation is read forwards, so the text after it deserves the
+  // larger half.
+  //   targetTop  the target's distance from the top of the scrollable content
+  //   viewportH  the body's visible height
+  //   maxScroll  the body's scrollable range (scrollHeight - clientHeight)
+  //   clearTop   px at the top of the body that must not cover the target —
+  //              the talk reader's sticky header. Centring clears it on any
+  //              panel taller than about 2.5x the header, but the floor is in
+  //              the rule rather than left to those numbers happening to work.
+  //
+  // Both clamps are intended behaviour, not leftovers: a target too near the
+  // start of the content scrolls to the top and sits wherever it falls (no jump
+  // and no second scroll to bounce off), and one near the end scrolls to the
+  // bottom, where it is still visible. This is also why the range is a
+  // parameter and not the shell's business: "as close as possible" is part of
+  // the placement rule, so it is decided and tested here. (setBodyScroll clamps
+  // again against the *live* range, which is the same clamp a frame later.)
+  //
+  // A target inside the top clamp is the one case the floor cannot honour: no
+  // scroll position lifts content that is already above the fold, so the panel
+  // does the only thing left and goes to the top. In the talk reader that never
+  // costs anything — the header is `position: sticky`, so it takes up flow at
+  // the top of the content and nothing the reader can cite starts above it.
+  const SCROLL_REVEAL_FRACTION = 0.4;
+  const SCROLL_REVEAL_CLEAR_PX = 10; // breathing room below a sticky header
+
+  function revealTop(pos) {
+    const p = pos || {};
+    const targetTop = Number(p.targetTop) || 0;
+    const viewportH = Math.max(0, Number(p.viewportH) || 0);
+    const maxScroll = Math.max(0, Number(p.maxScroll) || 0);
+    const clear = Math.max(0, Number(p.clearTop) || 0);
+    // Keeping the target on screen outranks keeping it clear: in a panel too
+    // short to do both (shorter than its own header), the floor gives way
+    // rather than pushing the target past the bottom edge.
+    const roomForFloor = Math.max(0, viewportH - SCROLL_REVEAL_CLEAR_PX);
+    const floor = clear > 0 ? Math.min(clear + SCROLL_REVEAL_CLEAR_PX, roomForFloor) : 0;
+    const gap = Math.max(viewportH * SCROLL_REVEAL_FRACTION, floor);
+    return Math.max(0, Math.min(maxScroll, targetTop - gap));
+  }
+
   // Did the body move because we moved it, or because the user did? Every write
   // records the position it left behind; a 'scroll' event reporting anything
   // else is the user's own, and the panel must yield to it rather than drag the
@@ -322,7 +375,9 @@
       createState, effectiveMode, selectMode, selectCitationView, setBible,
       createViews, saveViewScroll, selectView, keepView, settleView, dropViews,
       viewRestoresScroll, scrollStep, easeRamp, floorStep, carryScroll, realignmentDone, isForeignScroll,
+      revealTop,
       SCROLL_TAU_MS, SCROLL_RAMP_MS, SCROLL_MIN_STEP_PX, SCROLL_LIMITS,
+      SCROLL_REVEAL_FRACTION, SCROLL_REVEAL_CLEAR_PX,
     };
   }
   if (typeof document === 'undefined') return; // Node: pure core only
@@ -815,11 +870,14 @@
     requestAnimationFrame(() => afterFrames(n - 1, fn));
   }
 
-  // Scroll the body so `target` sits `offset`px below the top. Views request
-  // scrolls through here rather than writing scrollTop, so the host stays the
-  // one writer — and a scroll aimed at a view that has since been swapped out
-  // is dropped instead of moving whatever replaced it.
-  //   frames  defer the measurement N animation frames, for layout to settle
+  // Scroll the body so `target` is readable *in context* — see revealTop for
+  // where it lands and why. Views request scrolls through here rather than
+  // writing scrollTop, so the host stays the one writer — and a scroll aimed at
+  // a view that has since been swapped out is dropped instead of moving
+  // whatever replaced it.
+  //   clearTop  px of sticky chrome at the top of the body that must not cover
+  //             the target (the talk reader's header)
+  //   frames    defer the measurement N animation frames, for layout to settle
   //
   // Instant, not eased: every caller reveals its target as part of opening the
   // view (the talk reader's cited passage, the citations focus verse), so the
@@ -831,7 +889,12 @@
     afterFrames(o.frames || 0, () => {
       if (!ui || !target || !ui.body.contains(target)) return;
       const delta = target.getBoundingClientRect().top - ui.body.getBoundingClientRect().top;
-      setBodyScroll(ui.body.scrollTop + delta - (o.offset || 0));
+      setBodyScroll(revealTop({
+        targetTop: ui.body.scrollTop + delta,
+        viewportH: ui.body.clientHeight,
+        maxScroll: maxBodyScroll(),
+        clearTop: o.clearTop,
+      }));
     });
   }
 
