@@ -33,29 +33,29 @@ function eq(actual, expected, msg) {
 function fullSchedule() {
   const delays = [];
   for (let attempt = 0; ; attempt++) {
-    const delay = T.alignRetry(attempt, false);
+    const delay = T.nextAlignDelay(attempt, false);
     if (delay == null) return delays;
     delays.push(delay);
-    if (delays.length > 100) throw new Error('alignRetry never stopped');
+    if (delays.length > 100) throw new Error('nextAlignDelay never stopped');
   }
 }
 
 // ---- stop conditions ----
-console.log('alignRetry stop conditions:');
-eq(T.alignRetry(0, true), null, 'an aligned first apply schedules nothing');
-eq(T.alignRetry(3, true), null, 'alignment mid-run stops the chain');
-eq(T.alignRetry(T.ALIGN_ATTEMPTS, false), null, 'the attempt budget stops an unresolvable header');
-eq(T.alignRetry(T.ALIGN_ATTEMPTS + 5, false), null, 'past the budget stays stopped');
-check(T.alignRetry(0, false) != null, 'an unaligned first apply schedules a retry');
+console.log('nextAlignDelay stop conditions:');
+eq(T.nextAlignDelay(0, true), null, 'an aligned first apply schedules nothing');
+eq(T.nextAlignDelay(3, true), null, 'alignment mid-run stops the chain');
+eq(T.nextAlignDelay(T.ALIGN_ATTEMPTS, false), null, 'the attempt budget stops an unresolvable header');
+eq(T.nextAlignDelay(T.ALIGN_ATTEMPTS + 5, false), null, 'past the budget stays stopped');
+check(T.nextAlignDelay(0, false) != null, 'an unaligned first apply schedules a retry');
 
 // ---- backoff shape ----
-console.log('alignRetry backoff:');
+console.log('nextAlignDelay backoff:');
 const schedule = fullSchedule();
 eq(schedule.length, T.ALIGN_ATTEMPTS, 'the chain runs exactly the attempt budget');
 eq(schedule[0], 0, 'the first retry is immediate (next frame, no wait)');
 check(schedule.every((d) => typeof d === 'number' && d >= 0), 'every delay is a non-negative number');
 check(schedule.every((d, i) => i === 0 || d >= schedule[i - 1]), 'delays never shrink (monotone backoff)');
-check(schedule.every((d) => d <= 500), 'no single delay exceeds 500ms (stays responsive)');
+check(schedule.every((d) => d <= T.ALIGN_MAX_DELAY), `no single delay exceeds ${T.ALIGN_MAX_DELAY}ms (stays responsive)`);
 check(schedule.slice(0, 3).reduce((a, b) => a + b, 0) <= 150, 'the first three retries land within 150ms');
 const total = schedule.reduce((a, b) => a + b, 0);
 check(total > 0 && total <= 3000, `the whole chain gives up within 3s (got ${total}ms)`);

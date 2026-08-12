@@ -60,7 +60,7 @@ src/
   content/
     detect.js              __BTX.detect URL parse (all standard works + isBible flag) + SPA nav
     page-hook.js           page-world history patch, injected via web-accessible <script src> (CSP-safe)
-    theme.js               __BTX.theme  mirror(resolveTarget) → {refresh,stop}: owns capture/apply of site colors/fonts (+ headerBg/headerH), the launch re-apply backoff (pure alignRetry, module.exports for Node) and the theme/font/resize watching; resolveReadingContainer()
+    theme.js               __BTX.theme  mirror(resolveTarget) → {refresh}: owns capture/apply of site colors/fonts (+ headerBg/headerH), the launch re-apply backoff (pure nextAlignDelay, module.exports for Node) and the theme/font/resize watching; resolveReadingContainer()
     sanitize.js            __BTX.sanitize  IR → DOM (text nodes only)
     panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize. Pure state core (createState/effectiveMode/selectMode/selectCitationView/setBible, module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showTranslation({kind}), populateTranslations, getBodyEl/getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
     panel.css
@@ -87,7 +87,7 @@ tools/
   validate-books.js        asserts the 66-book Bible map + manifest file refs
   validate-settings.js     asserts the settings schema/normalizers/diff, the storage+own-write layer (fake chrome), and that nothing outside src/shared/settings.js touches storage.sync
   validate-citations.js    asserts generated citation data integrity (>= 88 books)
-  validate-theme-align.js  asserts the theme's launch re-apply policy (alignRetry): backoff shape + that it terminates
+  validate-theme-align.js  asserts the theme's launch re-apply policy (nextAlignDelay): backoff shape + that it terminates
   make-icons.js            regenerates icons
 source-data/               GITIGNORED build input: the BYU DBs
 ```
@@ -217,10 +217,11 @@ source-data/               GITIGNORED build input: the BYU DBs
   until the height resolves — otherwise the bars misalign until a resize. That
   retry belongs to the theme, not the orchestrator: `theme.mirror(resolveTarget)`
   owns the first apply, the alignment chain and the change watching, and returns
-  `{ refresh, stop }`; `content.js` only calls `refresh()` after `showChapter`
-  (a target now exists). The retry policy is the pure `alignRetry(attempt,
-  aligned)` (see `tools/validate-theme-align.js`) — it must terminate, since a
-  page with no plausible toolbar never resolves a height. The panel stays put
+  `{ refresh }`; `content.js` only calls `refresh()` after `showChapter` (a
+  target now exists — an alignment chain with nothing mounted stops at once).
+  The retry policy is the pure `nextAlignDelay(attempt, aligned)` (see
+  `tools/validate-theme-align.js`) — it must terminate, since a page with no
+  plausible toolbar never resolves a height. The panel stays put
   when the site header expands (it doesn't track it).
 - Commits here are unsigned (no signing key in the container) → GitHub shows
   "Unverified"; author email is `noreply@anthropic.com`. The git proxy port

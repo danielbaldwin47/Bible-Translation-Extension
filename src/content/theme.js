@@ -5,13 +5,14 @@
  * panel track light/dark/sepia and the font-size slider automatically.
  *
  * Interface:
- *   mirror(resolveTarget) -> { refresh(), stop() }
+ *   mirror(resolveTarget) -> { refresh() }
  *       Style the target element like the site and keep it that way: the initial
  *       apply, the launch-time re-apply until the site's toolbar height resolves,
  *       and the theme/font/resize watching afterwards. `resolveTarget()` is asked
  *       on every apply and may return null when there is nothing mounted to style.
- *       `refresh()` re-applies now and re-runs the alignment chain if the toolbar
- *       height still hasn't resolved (call it when a target appears).
+ *       `refresh()` re-applies now and restarts the alignment chain — call it when
+ *       a target appears; the policy below decides whether more applies follow.
+ *       A mirror lives as long as the content script does; there is no teardown.
  *   resolveReadingContainer() -> element   structural hook, ADR-0005
  *
  * Capturing, applying, observing and the retry policy are all internal: callers
@@ -33,13 +34,13 @@
   const ALIGN_ATTEMPTS = 8;
   const ALIGN_MAX_DELAY = 500;
 
-  function alignRetry(attempt, aligned) {
+  function nextAlignDelay(attempt, aligned) {
     if (aligned || attempt >= ALIGN_ATTEMPTS) return null;
     return attempt === 0 ? 0 : Math.min(ALIGN_MAX_DELAY, 50 * 2 ** (attempt - 1));
   }
 
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ALIGN_ATTEMPTS, ALIGN_MAX_DELAY, alignRetry };
+    module.exports = { ALIGN_ATTEMPTS, ALIGN_MAX_DELAY, nextAlignDelay };
   }
   if (typeof document === 'undefined') return; // Node: pure policy only
 
@@ -153,7 +154,8 @@
     targetEl.setAttribute('data-btx-theme', v.dark ? 'dark' : 'light');
   }
 
-  // Observe site theme/font changes; debounced. Returns a disconnect function.
+  // Watch for site theme/font changes; debounced. Lives for the life of the page
+  // (the content script has no teardown), so there is nothing to disconnect.
   function observe(onChange) {
     let timer = null;
     const schedule = () => {
@@ -167,11 +169,6 @@
       mo.observe(document.body, { attributes: true, attributeFilter: attrFilter });
     }
     window.addEventListener('resize', schedule);
-    return () => {
-      mo.disconnect();
-      window.removeEventListener('resize', schedule);
-      clearTimeout(timer);
-    };
   }
 
   // Keep resolveTarget()'s element looking like the site, for as long as it
@@ -180,11 +177,13 @@
   function mirror(resolveTarget) {
     let alignTimer = null;
     let alignFrame = null;
-    let stopped = false;
 
+    // Apply the site's look to whatever is mounted; false = nothing to style.
     function applyNow() {
       const el = resolveTarget();
-      if (el) apply(el, capture());
+      if (!el) return false;
+      apply(el, capture());
+      return true;
     }
 
     function cancelAlign() {
@@ -199,31 +198,25 @@
     function alignTick(attempt) {
       alignTimer = null;
       alignFrame = null;
-      if (stopped) return;
-      applyNow();
-      const delay = alignRetry(attempt, headerHeightPx != null);
+      // Nothing mounted: no apply happened, so the toolbar height can't resolve
+      // and retrying is pointless. refresh() restarts the chain once there is a
+      // target to align.
+      if (!applyNow()) return;
+      const delay = nextAlignDelay(attempt, headerHeightPx != null);
       if (delay == null) return;
       alignTimer = setTimeout(() => {
         alignFrame = requestAnimationFrame(() => alignTick(attempt + 1));
       }, delay);
     }
 
-    const disconnect = observe(applyNow);
-
     function refresh() {
-      if (stopped) return;
       cancelAlign(); // one chain at a time — a fresh refresh restarts the backoff
       alignTick(0);
     }
 
-    function stop() {
-      stopped = true;
-      cancelAlign();
-      disconnect();
-    }
-
+    observe(applyNow);
     refresh();
-    return { refresh, stop };
+    return { refresh };
   }
 
   root.__BTX = Object.assign(root.__BTX || {}, {
