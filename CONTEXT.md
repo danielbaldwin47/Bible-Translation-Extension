@@ -148,10 +148,16 @@ keeps scroll-sync and scroll-restore from writing the same body.
 
 **Placement**:
 Putting a view's body at its starting scroll position at the moment it mounts,
-as opposed to *moving* an already-visible body. Placement is instant; every
-other move eases. The distinction is the no-snap rule: a body that just
-appeared has no previous on-screen position to ease from, so easing there would
-only scroll through content the user never asked to see.
+as opposed to *moving* an already-visible body. Placement is instant: a body
+that just appeared has no previous on-screen position to move from.
+
+**Detached** (of a page-synced view):
+The state where the user has scrolled the panel away from the position the page
+points at. A detached panel is the user's: scroll-sync stops writing to it, so
+it never fights their scrolling. The next page scroll **re-aligns** it — the
+one movement in the panel that eases rather than happening instantly, since the
+body may have a long way to travel back. On arrival it is attached again and
+tracks the page 1:1.
 
 **Citation layout**:
 How the Citations mode arranges rows: **by verse** (verse → source-type group →

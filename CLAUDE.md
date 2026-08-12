@@ -246,20 +246,31 @@ source-data/               GITIGNORED build input: the BYU DBs
   view is the mounted one* — a sync firing while Citations is still up (the mode
   toggle re-asserts sync before the orchestrator swaps views) would otherwise
   scroll the citation list and poison the offset it saves on its way out.
-- **Moving** the body eases; **placing** it doesn't. `setBodyScroll(top, {
-  animate })` is the seam: scroll-sync is the only caller that animates, via a
-  damped chase (pure `scrollStep(from, target, dt, tau)`, τ = 90ms, normalized
-  on elapsed time so 60Hz and 120Hz feel the same; retarget mid-flight is just a
-  new target; stops within 0.5px; cancelled by `mountView`, `showChapter` and
-  `detachScrollSync`, so collapsing, switching mode and hiding all end it).
-  Everything else is instant, and deliberately: **placement** on mount (no
-  previous position to ease from — `placeOnMount` runs it twice, once next
-  frame, because a fresh body is still reflowing), `restoreScroll`,
-  `scrollIntoView` reveals (each caller reveals its target as part of *opening*
-  a view, so easing would scroll through content the user never asked to see),
-  and `prefers-reduced-motion: reduce`. While the page scrolls continuously the
-  chase trails it by roughly τ × velocity — that lag is the smoothness, and τ is
-  the one knob: lower tracks tighter, at the cost of a sharper mode-switch jump.
+- Scroll-sync tracks the page **1:1 and instantly** — one write per page-scroll
+  frame, no easing. That is deliberate: the panel should feel like the
+  browser's own scrolling, and a damped follow reads as lag. **Exactly one
+  move eases: re-alignment.** The user may scroll the panel away from the page;
+  `onBodyScrolled` notices (pure `isForeignScroll(actual, expected)` against the
+  position `writeBodyScroll` recorded), cancels any animation and sets
+  `syncDetached`. While detached the panel is the user's — nothing drags it
+  back, which is the bug that made the sidebar feel unscrollable. The next page
+  scroll eases it home — deliberately slow enough to read as *"it's scrolling
+  back up"* rather than a lurch. Two constants shape that: `SCROLL_TAU_MS`
+  (300) is how fast it settles once moving, `SCROLL_RAMP_MS` (260) how long it
+  takes to get going. The ramp exists because an exponential chase is fastest
+  on its very first frame, which feels like being thrown; pure
+  `easeRamp(elapsed, rampMs)` (smoothstep) scales the early frames so the move
+  accelerates in and `scrollStep(from, target, dt, tau, ramp)` eases it out.
+  Both are normalized on elapsed time, so 60Hz and 120Hz feel the same.
+  Retargeting mid-flight keeps `started`, so a target that moves while we
+  re-align doesn't restart the ramp and stall the body mid-travel; on arrival
+  `syncDetached` clears and tracking is 1:1 again. Everything else is instant: **placement** on mount
+  (`placeOnMount` runs it twice, once next frame, because a fresh body is still
+  reflowing), `restoreScroll`, and `scrollIntoView` reveals.
+- The system `prefers-reduced-motion` signal is deliberately **not** consulted.
+  The reader page scrolls smoothly whatever the OS setting says, so honoring it
+  in the panel alone would make the two disagree — the panel matches the
+  browser, not the OS.
 - `refreshScrollSync` is called only where its predicate
   (`visible && !collapsed && effectiveMode === 'translation'`) can move:
   `applyModeUI`, `applyCollapsedUI`, `hide()`. Rendering content is not a state
