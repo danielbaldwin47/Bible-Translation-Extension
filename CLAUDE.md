@@ -348,7 +348,11 @@ source-data/               GITIGNORED build input: the BYU DBs
   margins cancel the body padding — `.btx-view` adds no box of its own);
   `talkView.revealTarget` passes an `offset` to `panel.scrollIntoView` so the target
   lands below it. Esc = Back (document-level handler, rebound per open(),
-  self-removing when its reader is gone).
+  self-removing when its reader is gone). Its sticky `top` and that negative top
+  margin must sum to zero — sticky pins the *margin* box, so `top: 0` rests the
+  header a body-padding below the scrollport (the reason for #26; the CSS
+  comment has the mechanism). The body's top/inline padding is a literal only in
+  `#btx-root`'s `--btx-body-pad-top` / `--btx-body-pad-x`, which both rules read.
 - The history hook loads `page-hook.js` via `chrome.runtime.getURL` (the page
   CSP allow-lists our extension origin in `script-src`), not an inline script
   — avoids CSP violations and keeps instant nav detection; the 750ms poll is
