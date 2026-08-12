@@ -60,7 +60,7 @@ src/
   content/
     detect.js              __BTX.detect URL parse (all standard works + isBible flag) + SPA nav
     page-hook.js           page-world history patch, injected via web-accessible <script src> (CSP-safe)
-    theme.js               __BTX.theme  mirror(resolveTarget) → {refresh}: owns capture/apply of site colors/fonts (+ headerBg/headerH), the launch re-apply backoff (pure nextAlignDelay, module.exports for Node) and the theme/font/resize watching; resolveReadingContainer()
+    theme.js               __BTX.theme  mirror(resolveTarget) → {refresh}: owns capture/apply of site colors/fonts (+ headerBg/headerH), which paragraph's size to mirror (pure dominantTextStyle over a bounded paragraph sample), the launch re-apply backoff (pure nextAlignDelay) — both module.exports for Node — and the theme/font/resize/column-reflow watching; resolveReadingContainer()
     sanitize.js            __BTX.sanitize  IR → DOM (text nodes only)
     panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews/viewRestoresScroll/wantsScrollSync; scrollStep/easeRamp/floorStep/carryScroll/realignmentDone/isForeignScroll/revealTop + their tuning constants — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{clearTop,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
     panel.css
@@ -88,7 +88,7 @@ tools/
   validate-settings.js     asserts the settings schema/normalizers/diff, the storage+own-write layer (fake chrome), and that nothing outside src/shared/settings.js touches storage.sync
   validate-options-form.js asserts the options form's pure core (initial checks, default-id pick, the Save patch for the translation list, the fill plan) + that the shell routes through it
   validate-citations.js    asserts generated citation data integrity (>= 88 books)
-  validate-theme-align.js  asserts the theme's launch re-apply policy (nextAlignDelay): backoff shape + that it terminates
+  validate-theme-align.js  asserts the theme's pure policies: the launch re-apply backoff (nextAlignDelay — shape + that it terminates), which paragraph style gets mirrored (dominantTextStyle), and which applies are redundant (sameVars)
   make-icons.js            regenerates icons
 source-data/               GITIGNORED build input: the BYU DBs
 ```
@@ -387,6 +387,40 @@ source-data/               GITIGNORED build input: the BYU DBs
   `tools/validate-theme-align.js`) — it must terminate, since a page with no
   plausible toolbar never resolves a height. The panel stays put
   when the site header expands (it doesn't track it).
+- **What font size the panel mirrors is a policy, not a selector.** The reading
+  column's paragraphs are not all body text — the chapter heading is a `p` too,
+  it comes first in document order and it is set larger, which is how the panel
+  ended up rendering at heading size (#33). The rule is the pure
+  `dominantTextStyle(samples)`: over a bounded sample of the column's paragraphs
+  (`MAX_TEXT_SAMPLES`, capped because this runs on every step of the alignment
+  chain), the size covering the **most text by character count** wins, and
+  family + line-height come from that size's biggest paragraph so the three
+  mirrored values describe one real paragraph. Ties go to document order, so a
+  re-apply on an unchanged page is a no-op. Don't replace this with a verse
+  selector — ADR-0005, and the selector that looked right is what broke. With no
+  resolvable column (`resolveReadingColumn` → null) the old single-element
+  fallback stands.
+- `resolveReadingColumn` orders its candidates **widest first** (`main`,
+  `article`, `main [data-aid]`) — the opposite of `resolveReadingContainer`,
+  which wants one representative element and so goes narrowest first. Because
+  the pick above is weighted by how much text each size covers, a container
+  *wider* than the chapter is harmless (the chapter still holds most of the text
+  in it) while one *narrower* is fatal: `main [data-aid]` resolves to the first
+  such block in document order, which is the chapter heading's — sample that
+  alone and the panel mirrors the heading again, which is the bug.
+- The site's **font-size setting is not observable** where the theme's
+  MutationObserver watches (`<html>`/`<body>` attributes): moving that slider
+  used to leave the panel at its old size until a reload. The signal is a
+  `ResizeObserver` on the resolved reading column — a font-size change reflows
+  it whatever the site mutated — feeding the *same* debounced re-apply. Reflow
+  is a broad signal, so wake-ups arrive carrying no new styling (the panel
+  reserves page width with a margin on `<html>`, which reflows the column every
+  time the panel opens or is dragged). Answering those with a write is how a
+  watcher becomes a loop, so **an apply that would change nothing writes
+  nothing** — the pure `sameVars(a, b)` over `VAR_KEYS`, with a freshly mounted
+  panel root always written whatever it was styled with. `capture()` still runs
+  on every tick — that is what resolves the header height. `applyNow` also
+  re-points the observer, so an SPA nav that swaps the column out is picked up.
 - Commits here are unsigned (no signing key in the container) → GitHub shows
   "Unverified"; author email is `noreply@anthropic.com`. The git proxy port
   rotates and occasionally drops — retry pushes; clear any stale

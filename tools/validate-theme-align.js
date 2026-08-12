@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 /*
- * No-build sanity checks for the theme module's launch-alignment retry policy.
- * Run:
+ * No-build sanity checks for the theme module's pure cores. Run:
  *   node tools/validate-theme-align.js
  *
- * src/content/theme.js exports that policy for Node (the DOM half is skipped
- * when `document` is undefined). The policy answers one question — after an
- * apply, should the theme re-apply, and when? — and it has to terminate: the
- * site's sticky toolbar height is best-effort, so a page where it never
- * resolves must stop retrying instead of looping forever.
+ * src/content/theme.js exports them for Node (the DOM half is skipped when
+ * `document` is undefined). Two policies are checked here:
+ *
+ *   nextAlignDelay    after an apply, should the theme re-apply, and when? It
+ *                     has to terminate: the site's sticky toolbar height is
+ *                     best-effort, so a page where it never resolves must stop
+ *                     retrying instead of looping forever.
+ *   dominantTextStyle which of the reading column's paragraph styles is the
+ *                     one to mirror? The chapter heading is a paragraph too,
+ *                     and it comes first in document order — the answer has to
+ *                     be "the size most of the text is set in", by character
+ *                     count, or the panel mirrors the heading (issue #33).
  *
  * Exits non-zero on any failure so it can gate a commit.
  */
@@ -59,6 +65,82 @@ check(schedule.every((d) => d <= T.ALIGN_MAX_DELAY), `no single delay exceeds ${
 check(schedule.slice(0, 3).reduce((a, b) => a + b, 0) <= 150, 'the first three retries land within 150ms');
 const total = schedule.reduce((a, b) => a + b, 0);
 check(total > 0 && total <= 3000, `the whole chain gives up within 3s (got ${total}ms)`);
+
+// ---- dominant text style ----
+// A sample is one paragraph of the reading column: its computed size/family/
+// line-height plus how much text it holds. Order is document order.
+const s = (size, chars, font, line) => ({ size, chars, font: font || 'Georgia', line: line || '1.6' });
+
+console.log('dominantTextStyle:');
+eq(T.dominantTextStyle([]), null, 'no samples mirror nothing (caller keeps its fallback)');
+eq(T.dominantTextStyle(null), null, 'a missing sample list mirrors nothing');
+
+// The bug: the heading is first in document order and bigger, but it is one
+// short line against a chapter of verses.
+eq(
+  T.dominantTextStyle([s('20px', 9), s('17px', 220), s('17px', 180)]).size,
+  '17px',
+  'the size most of the text is set in wins over the first paragraph',
+);
+eq(
+  T.dominantTextStyle([s('20px', 9), s('17px', 220)]).size,
+  '17px',
+  'a lone big heading loses to a single verse of body text',
+);
+eq(
+  T.dominantTextStyle([s('14px', 30), s('14px', 40), s('17px', 200)]).size,
+  '17px',
+  'many small paragraphs still lose to the bulk of the text',
+);
+eq(
+  T.dominantTextStyle([s('17px', 100), s('20px', 60), s('20px', 60)]).size,
+  '20px',
+  'totals are summed across paragraphs, not compared one at a time',
+);
+
+// Family and line-height ride along with the winning size, so the three
+// mirrored values describe one real paragraph rather than three.
+const mixed = T.dominantTextStyle([
+  s('20px', 9, 'Heading, sans-serif', '32px'),
+  s('17px', 200, 'Body, serif', '27px'),
+]);
+eq(mixed, { size: '17px', font: 'Body, serif', line: '27px' }, 'family and line-height come from the winning size');
+eq(
+  T.dominantTextStyle([s('17px', 40, 'Small, serif', '20px'), s('17px', 300, 'Body, serif', '27px')]).font,
+  'Body, serif',
+  'within the winning size, the paragraph holding the most text supplies family/line',
+);
+
+// Junk in the sample list must not decide the answer.
+eq(T.dominantTextStyle([s('17px', 0), s('20px', 5)]).size, '20px', 'empty paragraphs carry no weight');
+eq(T.dominantTextStyle([s('', 500), s('17px', 5)]).size, '17px', 'a paragraph with no readable size is skipped');
+eq(T.dominantTextStyle([s('', 500)]), null, 'nothing usable in the list mirrors nothing');
+eq(
+  T.dominantTextStyle([s('17px', 100), s('20px', 100)]).size,
+  '17px',
+  'a tie goes to whichever came first, so the capture is stable across re-applies',
+);
+
+check(T.MAX_TEXT_SAMPLES > 0 && T.MAX_TEXT_SAMPLES <= 100, 'the paragraph sample is bounded (it runs on every re-apply)');
+
+// ---- redundant applies ----
+// The theme is woken by the reading column reflowing, and the panel reserves
+// page width with a margin on <html> — so wake-ups arrive carrying no new
+// styling. Writing on those is how a watcher becomes a loop.
+console.log('sameVars:');
+const vars = { bg: 'rgb(255,255,255)', fg: 'rgb(20,20,20)', headerBg: 'rgb(240,240,240)', headerH: 48, font: 'Body, serif', size: '17px', line: '27px', dark: false };
+const copy = () => Object.assign({}, vars);
+
+check(T.sameVars(vars, copy()), 'an unchanged capture is recognised as unchanged (no write, no loop)');
+check(T.sameVars(vars, vars), 'the same object is unchanged');
+check(!T.sameVars(vars, null), 'the first capture always writes (nothing to compare against)');
+check(!T.sameVars(null, vars), 'a missing capture is never "same"');
+for (const key of T.VAR_KEYS) {
+  const moved = copy();
+  moved[key] = key === 'headerH' ? 64 : key === 'dark' ? true : 'changed';
+  check(!T.sameVars(vars, moved), `a change to ${key} is written (it is a mirrored value)`);
+}
+check(T.sameVars(vars, Object.assign(copy(), { unmirrored: 'x' })), 'a field the panel does not mirror does not force a write');
 
 if (failures) {
   console.error(`\n${failures} check(s) failed.`);
