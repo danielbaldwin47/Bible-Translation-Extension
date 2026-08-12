@@ -1,10 +1,12 @@
 /*
  * Orchestrator (content-script entry). Detection, worker messaging, and data
- * fetching — the panel owns its own state (mode, layout, collapsed, width):
+ * fetching — the panel owns its own state (mode, layout, collapsed, width) and
+ * hosts the views (caching, scroll position):
  *  - watches SPA navigation and renders the matching chapter's content
  *  - mirrors the site theme/font into the panel and keeps it in sync
  *  - manages translation selection and the loading/error/no-key states
  *  - answers the panel's renderMode event with fresh mode content
+ *  - names each view and supplies its content key; it holds no panel DOM
  *
  * Runs once per page. Shared modules (constants/settings/books) and the other
  * content modules are loaded before this file via the manifest content_scripts
@@ -38,10 +40,7 @@
   let userClosed = false;
   let themeDisconnect = null;
   let currentKey = null; // dedupes repeat navigation events for the same chapter
-  let mounted = null; // which mode's content is in the panel body right now
   let scrollToSnippet = true; // open sources scrolled to the cited paragraph
-  let citCache = null; // { key, node, scrollTop } — preserves the citations view
-  let transCache = null; // { key, node, footer, scrollTop } — preserves translation view
 
   function getStored(key) {
     return new Promise((resolve) => {
@@ -115,9 +114,6 @@
     const key = `${parsed.collection}/${parsed.ldsBook}/${parsed.chapter}/${parsed.lang}`;
     if (key === currentKey) return;
     currentKey = key;
-    citCache = null; // new chapter -> discard the cached views
-    transCache = null;
-    mounted = null;
     clearTimeout(retryTimer);
 
     if (userClosed) {
@@ -144,91 +140,78 @@
     return panel.effectiveMode() === 'citations' ? renderCitations(current) : renderTranslation();
   }
 
-  // The panel switched its mode or citation layout and needs fresh content:
-  // remember where the outgoing view was scrolled to, then fill the new one.
+  // The panel switched its mode or citation layout and needs fresh content.
+  // (Saving the outgoing view's scroll position is the panel's job.)
   function onRenderMode() {
     if (!current) return;
-    if (mounted === 'citations') saveCitScroll();
-    else if (mounted === 'translation') saveTransScroll();
     renderActiveMode();
   }
 
   async function renderTranslation() {
-    mounted = 'translation';
     const e = await loadEnabled();
+    // The user can toggle to Citations while that resolves; mounting a
+    // translation view now would paint over the citations they asked for.
+    if (panel.effectiveMode() !== 'translation') return;
     const list = e.translations || [];
     if (!list.length) {
       panel.populateTranslations([], '');
-      if (e.provider === C.PROVIDER_APIBIBLE && !e.hasKey) panel.showTranslation({ kind: 'nokey' });
-      else panel.showTranslation({ kind: 'error', message: 'No translations enabled yet. Open settings (⚙) to choose.', retry: false });
-      return;
+      // Not a chapter — the panel won't re-mount these states anyway.
+      return panel.showView({ name: 'translation', key: 'no-translations', render: () => {
+        if (e.provider === C.PROVIDER_APIBIBLE && !e.hasKey) panel.showTranslation({ kind: 'nokey' });
+        else panel.showTranslation({ kind: 'error', message: 'No translations enabled yet. Open settings (⚙) to choose.', retry: false });
+      } });
     }
     if (!selectedId || !findTranslation(selectedId)) {
       const stored = await getStored(SELECTION_KEY);
       selectedId = (findTranslation(stored) && stored) || (findTranslation(e.defaultId) && e.defaultId) || list[0].id;
     }
     panel.populateTranslations(list, selectedId);
-    // Re-attach the cached chapter (keeps scroll) instead of re-fetching.
-    if (transCache && transCache.key === transKey() && transCache.node) {
-      panel.showTranslation({
-        kind: 'restore',
-        node: transCache.node,
-        footer: transCache.footer,
-        scrollTop: transCache.scrollTop || 0,
-      });
-      return;
-    }
-    await loadChapter();
+    // Same chapter and same version -> the panel re-mounts what it has, and
+    // loadChapter never runs.
+    return panel.showView({ name: 'translation', key: transKey(), render: () => loadChapter() });
   }
 
   function transKey() {
     return current ? `${citKey(current)}::${selectedId}` : null;
   }
 
-  function saveTransScroll() {
-    if (transCache) transCache.scrollTop = panel.getBodyEl().scrollTop;
-  }
-
   function citKey(parsed) {
     return `${parsed.collection}/${parsed.ldsBook}/${parsed.chapter}`;
   }
 
-  function saveCitScroll() {
-    if (citCache) citCache.scrollTop = panel.getBodyEl().scrollTop;
-  }
-
-  async function renderCitations(parsed, focusVerse) {
-    mounted = 'citations';
-    const body = panel.getBodyEl();
+  function renderCitations(parsed, focusVerse) {
     const view = panel.citationView();
-    const key = `${citKey(parsed)}::${view}`;
-    // Re-attach the cached view (keeps scroll + which dropdowns are open).
-    if (!focusVerse && citCache && citCache.key === key && citCache.node) {
-      body.textContent = '';
-      body.appendChild(citCache.node);
-      const top = citCache.scrollTop || 0;
-      body.scrollTop = top;
-      requestAnimationFrame(() => { body.scrollTop = top; });
-      return;
-    }
-    const node = await citPanel.render(body, {
-      slug: parsed.ldsBook,
-      chapter: parsed.chapter,
-      fullName: BOOKS.bookFullName(parsed.ldsBook) || parsed.ldsBook,
-      focusVerse,
-      onOpenTalk: openTalk,
-      view,
+    // The layout (and any focus verse) is part of the content's identity, so
+    // flipping By source / By verse rebuilds while a plain toggle re-mounts.
+    const key = `${citKey(parsed)}::${view}${focusVerse ? '::v' + focusVerse : ''}`;
+    return panel.showView({
+      name: 'citations',
+      key,
+      render: (host) => citPanel.render(host, {
+        slug: parsed.ldsBook,
+        chapter: parsed.chapter,
+        fullName: BOOKS.bookFullName(parsed.ldsBook) || parsed.ldsBook,
+        focusVerse,
+        onOpenTalk: openTalk,
+        view,
+      }),
     });
-    citCache = { key, node, scrollTop: 0 };
   }
 
+  // The talk reader is a view like the others — which is what makes "‹ Back"
+  // land on the citation list exactly where it was left. It is never cached:
+  // each open re-fetches and re-attaches its own highlights and Esc handler.
   function openTalk(entry) {
-    saveCitScroll(); // so "‹ Back" returns to the same spot in the list
-    talkView.open(panel.getBodyEl(), {
-      entry,
-      source: entry.source || {},
-      onBack: () => renderCitations(current),
-      autoScroll: scrollToSnippet,
+    return panel.showView({
+      name: 'talk',
+      key: `${entry.talkId}#${entry.citId}`,
+      cache: false,
+      render: (host) => talkView.open(host, {
+        entry,
+        source: entry.source || {},
+        onBack: () => renderCitations(current),
+        autoScroll: scrollToSnippet,
+      }),
     });
   }
 
@@ -260,14 +243,12 @@
       handleError((res && res.error) || { code: C.ERR.UNKNOWN }, label);
       return;
     }
-    const footer = res.copyright || tr.copyright || '';
-    const node = panel.showTranslation({
+    panel.showTranslation({
       kind: 'content',
       blocks: res.blocks,
-      copyright: footer,
+      copyright: res.copyright || tr.copyright || '',
       reference: res.reference || refLabel(parsed),
     });
-    transCache = { key: transKey(), node, footer, scrollTop: 0 };
     if (res.fums) fireFums(res.fums);
   }
 
@@ -329,7 +310,9 @@
       onTranslationChange: (id) => {
         selectedId = id;
         storeSelection(id);
-        if (panel.effectiveMode() === 'translation') loadChapter();
+        // Another version is different content: re-enter the view so it gets
+        // its own cache key rather than overwriting the mounted one.
+        if (panel.effectiveMode() === 'translation') renderTranslation();
       },
       onRetry: () => loadChapter(),
       onGear: () => send({ type: C.MSG.OPEN_OPTIONS }),

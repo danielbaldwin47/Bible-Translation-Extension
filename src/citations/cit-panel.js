@@ -19,6 +19,7 @@
 
   const citData = () => root.__BTX.citData;
   const vm = () => root.__BTX.citVM;
+  const panel = () => root.__BTX.panel;
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -157,17 +158,17 @@
     return noRes;
   }
 
-  // Render the chapter's citations into bodyEl. Builds into a single wrapper that
-  // is returned, so the orchestrator can cache + re-attach it (preserving scroll
-  // and which dropdowns are open) when toggling between modes.
+  // Render the chapter's citations into `host` — the container the panel's view
+  // host handed us. Keeping that container alive (so scroll position and which
+  // dropdowns are open survive a mode toggle) is the panel's business, not ours.
   // opts: { slug, chapter, fullName, focusVerse, onOpenTalk, view }
-  async function render(bodyEl, opts) {
+  async function render(host, opts) {
     const { slug, chapter, onOpenTalk } = opts;
-    bodyEl.textContent = '';
+    host.textContent = '';
     const loading = el('div', 'btx-state btx-loading');
     loading.appendChild(el('div', 'btx-spinner'));
     loading.appendChild(el('div', 'btx-state-text', 'Loading citations…'));
-    bodyEl.appendChild(loading);
+    host.appendChild(loading);
 
     const data = await citData().chapterData(slug, chapter);
     const viewModel = vm().buildView(data, opts);
@@ -189,11 +190,10 @@
       if (noRes) wrap.appendChild(noRes);
     }
 
-    bodyEl.textContent = '';
-    bodyEl.appendChild(wrap);
+    host.textContent = '';
+    host.appendChild(wrap);
     const focusEl = viewModel.focusUid && wrap.querySelector(`[data-btx-uid="${CSS.escape(viewModel.focusUid)}"]`);
-    if (focusEl) requestAnimationFrame(() => { bodyEl.scrollTop = Math.max(0, focusEl.offsetTop - 50); });
-    return wrap;
+    if (focusEl) panel().scrollIntoView(focusEl, { offset: 50, frames: 1 });
   }
 
   root.__BTX = Object.assign(root.__BTX || {}, { citPanel: { render } });

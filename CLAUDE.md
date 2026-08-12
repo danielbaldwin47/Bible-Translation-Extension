@@ -62,16 +62,16 @@ src/
     page-hook.js           page-world history patch, injected via web-accessible <script src> (CSP-safe)
     theme.js               __BTX.theme  mirror site colors/fonts (+ headerBg); resolveReadingContainer(); captureHeaderHeight/headerHeightKnown
     sanitize.js            __BTX.sanitize  IR → DOM (text nodes only)
-    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize. Pure state core (createState/effectiveMode/selectMode/selectCitationView/setBible, module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showTranslation({kind}), populateTranslations, getBodyEl/getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
+    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{offset,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
     panel.css
     content.js             orchestrator: detect → worker/citations → panel data/content only (no panel state); answers panel's renderMode event; applyThemeUntilAligned (re-applies theme at launch until the site toolbar height resolves)
   citations/
     cit-data.js            __BTX.citData    load/cache shards, sources, gunzip bundled talks; chapterData(slug,chap) → deduped entries + each cite's in-chapter verse span + uniqueTotal
     cit-view-model.js      __BTX.citVM (+ module.exports) PURE, no DOM: buildView(chapterData, {view,fullName,chapter,focusVerse}) → descriptor tree (verse / source-type groups, citation rows, uids, counts, range + summary labels, single-source pre-open); anchorVerses dedup; formatVerses/verseLabel; byFirstVerse/byDateDesc; toolbar state machine (initialState/filterPlan/applyPlan/toggleAllPlan/toggleLabel)
-    cit-panel.js           __BTX.citPanel   DOM adapter only (render) — builds elements from the descriptor tree and mirrors toolbar plans onto `[data-btx-uid]` nodes (filter box matches row.dataset.btxSearch; expand/collapse-all shown when uniqueTotal >= 4). No ordering/grouping/counting/data-derived labels here; the fixed chrome it does own is the loading + no-results lines, the filter placeholder, and the quote marks around a snippet. talk-view takes verseLabel from citVM directly
+    cit-panel.js           __BTX.citPanel   DOM adapter only (render(host, opts) — fills the container the panel's view host gave it, returns nothing) — builds elements from the descriptor tree and mirrors toolbar plans onto `[data-btx-uid]` nodes (filter box matches row.dataset.btxSearch; expand/collapse-all shown when uniqueTotal >= 4). No ordering/grouping/counting/data-derived labels here; the fixed chrome it does own is the loading + no-results lines, the filter placeholder, and the quote marks around a snippet. talk-view takes verseLabel from citVM directly
     highlights.js          __BTX.highlights local select-to-highlight in the reader; chrome.storage.local; re-apply on reopen
     talk-source.js         __BTX.talkSource load({entry,source}) → {html,url,findTarget(container)}; CORPUS_PLANS table (live vs bundled, scroll target per corpus); pre-2013 GC URL repair (pure pickSessionUrl/bouncedToConference/fullTalkUrl, module.exports for Node tests)
-    talk-view.js           __BTX.talkView   inline reader over that seam: sanitizer, render, highlights, generic scroll-to-target, sticky header ("‹ Back" + "Open full talk" + cited-verse label; Esc = back); footnote-number styling (blue superscripts)
+    talk-view.js           __BTX.talkView   inline reader over that seam (open(host, opts) — fills a view-host container): sanitizer, render, highlights, marks the scroll target and asks `panel.scrollIntoView` to reveal it, sticky header ("‹ Back" + "Open full talk" + cited-verse label; Esc = back); footnote-number styling (blue superscripts)
     citations.css
     data/                  GENERATED, committed, shipped (~62 MB, ADR-0003):
       index.json           build meta + per-book counts (88 books)
@@ -136,8 +136,9 @@ source-data/               GITIGNORED build input: the BYU DBs
   `node --test tools/test-talk-source.js` (node:test, built in — no framework,
   no deps); syntax: `node --check <file>`. Citations logic is testable only if
   it stays in `cit-view-model.js` — put new ordering/grouping/labelling rules
-  there, not in `cit-panel.js`. Same for the panel: mode/toggle semantics live
-  in panel.js's pure state core (validate-panel-state.js), not the DOM shell.
+  there, not in `cit-panel.js`. Same for the panel: mode/toggle semantics and
+  the view host's caching rules live in panel.js's pure cores
+  (validate-panel-state.js), not the DOM shell.
 
 ## Gotchas
 
@@ -190,10 +191,32 @@ source-data/               GITIGNORED build input: the BYU DBs
   changes (mode/layout toggles) arrive via the panel's `renderMode` event
   instead, bypassing that dedupe. Reset `currentKey = null` to force a
   re-render.
-- The citations view is cached (`citCache` in `content.js`) so toggling
-  Translation↔Citations preserves scroll, open dropdowns, and filter text;
-  invalidated on chapter change / settings re-render. `cit-panel.render`
-  returns the wrapper node it builds.
+- View caching lives in the panel's **view host**, not the orchestrator.
+  `panel.showView({ name, key, cache, render })` mounts one `.btx-view`
+  container into `.btx-body`: same `name` + same `key` re-mounts the cached
+  container at the scroll offset it was left at (so Translation↔Citations
+  preserves scroll, open dropdowns, and filter text, and "‹ Back" out of a talk
+  lands where the list was), a different `key` calls `render(container)`. One
+  cache slot per name — `translation` (key = chapter + version), `citations`
+  (key = chapter + layout + focus verse), `talk` (`cache: false`, never
+  re-mounted). `showChapter` drops every cached view, which covers chapter
+  change and the settings re-render. The orchestrator names views and supplies
+  keys; it holds no panel DOM.
+- A view **earns** its cache slot (`keep` starts `null`, not `true`). Two ways
+  to lose it: `showTranslation` marks its own result (`keepView`) — content
+  yes, spinner/no-key/error no, so a retry rebuilds — and `settleView` refuses
+  a render that threw or left the container empty (a `loadChapter` that bails
+  after its await must not cache a blank Translation tab).
+- `panel` is the only writer of `.btx-body`'s scrollTop. Views ask via
+  `panel.scrollIntoView(target, { offset, frames })` (`frames` defers the
+  measurement N animation frames for layout to settle) — cit-panel for the
+  focus verse, talk-view for the citation scroll target. A scroll aimed at a
+  view that has since been swapped out is dropped, not applied to whatever
+  replaced it. Same for a slow `render`: it fills a detached container and
+  can't paint over the view that replaced it — but `showTranslation` resolves
+  its container *late* (whatever is mounted now), so the orchestrator's
+  `reqToken` / `effectiveMode()` guards around `loadChapter` are what keep a
+  stale chapter response off the wrong view.
 - Citations filter: `citVM.filterPlan` decides what hides (`.btx-cit-hidden` on
   non-matching rows and groups left empty), auto-opens surviving groups while
   filtering, and restores the pre-filter open state on clear (`preFilterOpen`,
@@ -201,10 +224,11 @@ source-data/               GITIGNORED build input: the BYU DBs
   onto `[data-btx-uid]` nodes and feeds the user's own opens back into the
   state via a capture-phase `toggle` listener ('toggle' doesn't bubble).
   Snippets clamp to 3 lines in CSS.
-- The talk reader header is position:sticky inside `.btx-body` (negative
-  margins cancel the body padding); `talkView.scrollToTarget` takes an `offset`
-  so the target lands below it. Esc = Back (document-level handler, rebound per
-  open(), self-removing when its reader is gone).
+- The talk reader header is position:sticky inside its `.btx-view` (negative
+  margins cancel the body padding — `.btx-view` adds no box of its own);
+  `talkView.revealTarget` passes an `offset` to `panel.scrollIntoView` so the target
+  lands below it. Esc = Back (document-level handler, rebound per open(),
+  self-removing when its reader is gone).
 - The history hook loads `page-hook.js` via `chrome.runtime.getURL` (the page
   CSP allow-lists our extension origin in `script-src`), not an inline script
   — avoids CSP violations and keeps instant nav detection; the 750ms poll is

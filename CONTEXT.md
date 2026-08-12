@@ -116,12 +116,33 @@ books only Citations exists, so citations is forced and the mode toggle is
 hidden — the stored preference survives untouched. `panel.effectiveMode()` is
 the one source of truth.
 
+**View**:
+One named body of panel content that can be mounted in the panel body:
+`translation`, `citations`, or `talk` (the inline reader). Exactly one is
+mounted at a time.
+
+**View key**:
+The string identifying *which content* a view is showing — chapter + version
+for translation, chapter + citation layout (+ focus verse, if any) for
+citations. Same name and same key means the mounted DOM is still valid; a
+different key means rebuild. The orchestrator supplies keys, the view host
+compares them. A view only becomes re-mountable once it has earned it: a
+spinner, an error, or a render that painted nothing is never cached.
+
+**View host**:
+The part of `__BTX.panel` that mounts views: it holds one cached body per view
+name, remembers where each was scrolled, invalidates them all on a new chapter,
+and is the only writer of the panel body's scroll position. Callers name a view
+and say how to build it (`showView`) or ask for a node to be scrolled into
+sight (`scrollTo`); no module outside the panel holds panel DOM.
+
 **Citation layout**:
 How the Citations mode arranges rows: **by verse** (verse → source-type group →
 talks) or **by source** (one deduped row per talk, grouped by source type).
 Stored as the `citationView` setting; flippable live via the in-panel
 sub-toggle.
-_Avoid_: view (bare)
+_Avoid_: view (bare — that is a hosted panel view; the `citationView` setting
+name predates the term)
 
 **Citation row**:
 One rendered `.btx-cit` row in the panel. In by-verse layout a row is one cite

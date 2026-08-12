@@ -2,25 +2,33 @@
  * The side panel — a deep module that owns everything panel-shaped: its DOM,
  * its state (mode, citation layout, collapsed, width, bible-mode), the
  * persistence of that state through __BTX.settings, scroll-sync, and
- * drag-to-resize. The orchestrator supplies chapter context and content; it
- * never sequences panel setters or persists panel state.
+ * drag-to-resize. It is also the *view host*: callers ask for a named view and
+ * the panel decides whether to rebuild it or re-mount the one it cached, and
+ * it is the only writer of the body's scroll position. The orchestrator
+ * supplies chapter context and content; it never sequences panel setters,
+ * persists panel state, or holds panel DOM.
  *
  * Interface:
  *   init(handlers)                 build the DOM, adopt persisted state, wire
  *                                  controls; must be awaited before use
  *   showChapter({ title, isBible })  make the panel visible for a chapter
+ *                                  (also invalidates every cached view)
  *   hide()
  *   effectiveMode()                'translation' | 'citations' — citations is
  *                                  forced on non-Bible chapters
  *   citationView()                 'source' | 'verse'
- *   showTranslation(state)         render a translation-mode body state:
+ *   showView({ name, key, cache, render })  mount the named view; see the view
+ *                                  host section below. Returns render's result.
+ *   scrollIntoView(target, { offset, frames })  scroll the body to a node
+ *                                  inside the mounted view
+ *   showTranslation(state)         render a translation-mode body state into
+ *                                  the mounted view:
  *                                    { kind:'loading', label }
  *                                    { kind:'nokey' }
  *                                    { kind:'error', message, retry }
- *                                    { kind:'content', blocks, copyright, reference } -> node
- *                                    { kind:'restore', node, footer, scrollTop }
+ *                                    { kind:'content', blocks, copyright, reference }
  *   populateTranslations(list, selectedId)
- *   getBodyEl() / getRootEl()
+ *   getRootEl()
  *
  * handlers: { renderMode(mode), onTranslationChange(id), onGear, onClose,
  *   onRetry }. `renderMode` fires whenever the panel invalidated its own body
@@ -81,8 +89,67 @@
     return effectiveMode(s) !== before;
   }
 
+  // ---- Pure view-host core (Node-testable) --------------------------------
+  // A *view* is a named body of panel content: 'translation', 'citations',
+  // 'talk'. The host keeps at most one cached body per name, tagged with a
+  // caller-supplied content key. Same name + same key => the very same DOM is
+  // re-mounted, at the scroll offset it was left at; a different key (another
+  // chapter, another citation layout, another translation) means rebuild.
+  // Nothing outside the panel decides when a body may be reused.
+
+  function createViews() {
+    return { active: null, entries: {} };
+  }
+
+  // Record where the mounted view was scrolled, just before swapping it out —
+  // this is what makes Translation<->Citations (and "< Back" out of a talk)
+  // land where the user left off.
+  function saveViewScroll(v, scrollTop) {
+    const e = v.active && v.entries[v.active];
+    if (e) e.scrollTop = Math.max(0, Math.round(Number(scrollTop) || 0));
+  }
+
+  // Choose between re-mounting the cached body and building a fresh one, and
+  // make `name` the mounted view either way. `cacheable === false` marks the
+  // fresh body as throwaway (the talk reader, which re-opens from scratch).
+  function selectView(v, name, key, cacheable) {
+    const hit = v.entries[name];
+    v.active = name;
+    if (hit && hit.keep === true && hit.node && hit.key === key) return { action: 'restore', entry: hit };
+    // keep starts undecided: a body earns its cache slot, it isn't given one.
+    const entry = { key, node: null, scrollTop: 0, footer: '', cacheable: cacheable !== false, keep: null };
+    v.entries[name] = entry;
+    return { action: 'build', entry };
+  }
+
+  // The mounted view saying whether what it just rendered is worth re-mounting.
+  // A finished translation chapter is; a spinner, a no-key prompt, or an error
+  // is not — re-mounting one of those instead of retrying strands the user.
+  function keepView(v, keep) {
+    const e = v.active && v.entries[v.active];
+    if (e) e.keep = keep === true;
+  }
+
+  // The render is over. A view that said nothing either way earns its slot by
+  // having finished and left something behind (`produced`) — so a render that
+  // bailed out after an await can never cache a blank body. One that already
+  // answered keeps its answer.
+  function settleView(entry, produced) {
+    if (!entry.cacheable) { entry.keep = false; return; }
+    if (entry.keep === null) entry.keep = produced === true;
+  }
+
+  // A new chapter invalidates every cached body at once.
+  function dropViews(v) {
+    v.entries = {};
+    v.active = null;
+  }
+
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { createState, effectiveMode, selectMode, selectCitationView, setBible };
+    module.exports = {
+      createState, effectiveMode, selectMode, selectCitationView, setBible,
+      createViews, saveViewScroll, selectView, keepView, settleView, dropViews,
+    };
   }
   if (typeof document === 'undefined') return; // Node: pure core only
 
@@ -104,6 +171,7 @@
   let ui = null; // refs once built
   const cbs = {}; // event handlers set by init()
   let state = createState({});
+  let views = createViews();
   let visible = false;
   let scrollRaf = null;
   let scrollSyncOn = false;
@@ -345,6 +413,7 @@
 
   function showChapter(ctx) {
     ensureRoot();
+    dropViews(views); // a different chapter — nothing cached still applies
     visible = true;
     ui.rootEl.style.display = '';
     ui.title.textContent = (ctx && ctx.title) || '';
@@ -363,36 +432,129 @@
     updatePageReserve();
   }
 
+  // ---- View host -------------------------------------------------------------
+  // The body holds exactly one view container at a time. Callers never receive
+  // or hand back DOM: they name a view and describe how to build it, and the
+  // host decides between building and re-mounting what it already has.
+
+  function mountView(entry) {
+    ui.body.textContent = '';
+    ui.body.appendChild(entry.node);
+    ui.footer.textContent = entry.footer || '';
+  }
+
+  function restoreScroll(entry) {
+    const top = entry.scrollTop;
+    ui.body.scrollTop = top;
+    // A second pass next frame: a re-mounted view can still be reflowing (web
+    // fonts, re-applied highlights) when the first assignment lands. Skipped if
+    // the view was swapped out again in between.
+    afterFrames(1, () => {
+      if (ui && ui.body.contains(entry.node)) ui.body.scrollTop = top;
+    });
+  }
+
+  // Mount the named view.
+  //   name    'translation' | 'citations' | 'talk' — one cache slot each
+  //   key     content identity; a different key rebuilds
+  //   cache   false for a view that must never be re-mounted (the talk reader)
+  //   render(node)  fills the fresh container; may be async. Called only on a
+  //                 rebuild, and only after the container is in the document.
+  // Returns render's result (so callers can await it), or undefined on a hit.
+  function showView(spec) {
+    ensureRoot();
+    saveViewScroll(views, ui.body.scrollTop);
+    const { action, entry } = selectView(views, spec.name, spec.key, spec.cache);
+    if (action === 'restore') {
+      mountView(entry);
+      restoreScroll(entry);
+      return undefined;
+    }
+    entry.node = el('div', 'btx-view');
+    mountView(entry);
+    ui.body.scrollTop = 0;
+    // A slow render whose view was swapped out meanwhile writes into a detached
+    // container — it can no longer paint over whatever replaced it, and it only
+    // caches what it actually left behind (see settleView).
+    const settle = (ok) => settleView(entry, ok && entry.node.childElementCount > 0);
+    const out = spec.render ? spec.render(entry.node) : undefined;
+    if (out && typeof out.then === 'function') {
+      return out.then(
+        (r) => { settle(true); return r; },
+        (err) => { settle(false); throw err; },
+      );
+    }
+    settle(true);
+    return out;
+  }
+
+  // The container the mounted view renders into. Falls back to the body itself
+  // so a stray call before any showView still shows something.
+  function viewNode() {
+    const e = views.active && views.entries[views.active];
+    return (e && e.node) || ui.body;
+  }
+
+  function afterFrames(n, fn) {
+    if (!(n > 0)) { fn(); return; }
+    requestAnimationFrame(() => afterFrames(n - 1, fn));
+  }
+
+  // Scroll the body so `target` sits `offset`px below the top. Views request
+  // scrolls through here rather than writing scrollTop, so the host stays the
+  // one writer — and a scroll aimed at a view that has since been swapped out
+  // is dropped instead of moving whatever replaced it.
+  //   frames  defer the measurement N animation frames, for layout to settle
+  function scrollIntoView(target, opts) {
+    const o = opts || {};
+    afterFrames(o.frames || 0, () => {
+      if (!ui || !target || !ui.body.contains(target)) return;
+      const delta = target.getBoundingClientRect().top - ui.body.getBoundingClientRect().top;
+      ui.body.scrollTop = Math.max(0, ui.body.scrollTop + delta - (o.offset || 0));
+    });
+  }
+
   // ---- Body content (translation mode) --------------------------------------
 
+  // The footer (copyright line) belongs to the view, so it comes back with it.
+  function setFooter(text) {
+    const e = views.active && views.entries[views.active];
+    if (e) e.footer = text || '';
+    ui.footer.textContent = text || '';
+  }
+
   function clearBody() {
-    ui.body.textContent = '';
-    ui.footer.textContent = '';
+    viewNode().textContent = '';
+    setFooter('');
   }
 
   function showTranslation(st) {
     ensureRoot();
+    const host = viewNode();
     switch (st && st.kind) {
       case 'loading': {
         clearBody();
+        keepView(views, false);
         const wrap = el('div', 'btx-state btx-loading');
         wrap.appendChild(el('div', 'btx-spinner'));
         wrap.appendChild(el('div', 'btx-state-text', st.label ? `Loading ${st.label}…` : 'Loading…'));
-        ui.body.appendChild(wrap);
-        return undefined;
+        host.appendChild(wrap);
+        return;
       }
       case 'nokey': {
         clearBody();
+        keepView(views, false);
         const wrap = el('div', 'btx-state');
         wrap.appendChild(el('p', 'btx-state-text', 'Add a free scripture.api.bible API key to load translations.'));
         const btn = el('button', 'btx-cta', 'Add your API key');
         btn.addEventListener('click', () => cbs.onGear && cbs.onGear());
         wrap.appendChild(btn);
-        ui.body.appendChild(wrap);
-        return undefined;
+        host.appendChild(wrap);
+        return;
       }
       case 'error': {
         clearBody();
+        keepView(views, false);
         const wrap = el('div', 'btx-state btx-error');
         wrap.appendChild(el('p', 'btx-state-text', st.message || 'Something went wrong.'));
         if (st.retry !== false) {
@@ -400,34 +562,20 @@
           btn.addEventListener('click', () => cbs.onRetry && cbs.onRetry());
           wrap.appendChild(btn);
         }
-        ui.body.appendChild(wrap);
-        return undefined;
+        host.appendChild(wrap);
+        return;
       }
       case 'content': {
         clearBody();
         const article = el('div', 'btx-article');
         if (st.reference) article.appendChild(el('div', 'btx-reference', st.reference));
         article.appendChild(SAN().renderBlocks(st.blocks));
-        ui.body.appendChild(article);
-        if (st.copyright) ui.footer.textContent = st.copyright;
+        host.appendChild(article);
+        if (st.copyright) setFooter(st.copyright);
+        keepView(views, true); // a loaded chapter is worth re-mounting
         ui.body.scrollTop = 0;
         refreshScrollSync();
-        return article;
       }
-      // Re-display a previously-rendered chapter node at its saved scroll
-      // position (used to keep the Translation tab's place across mode toggles).
-      case 'restore': {
-        ui.body.textContent = '';
-        ui.footer.textContent = st.footer || '';
-        ui.body.appendChild(st.node);
-        const top = st.scrollTop || 0;
-        ui.body.scrollTop = top;
-        requestAnimationFrame(() => { ui.body.scrollTop = top; });
-        refreshScrollSync();
-        return st.node;
-      }
-      default:
-        return undefined;
     }
   }
 
@@ -510,11 +658,6 @@
     return ui.rootEl;
   }
 
-  function getBodyEl() {
-    ensureRoot();
-    return ui.body;
-  }
-
   // ---- Width: settings + drag-to-resize ----
   // Bounds come from the settings module (the one source of truth); the extra
   // viewport cap is this panel's own concern.
@@ -561,9 +704,10 @@
       hide,
       effectiveMode: () => effectiveMode(state),
       citationView: () => state.citationView,
+      showView,
+      scrollIntoView,
       showTranslation,
       populateTranslations,
-      getBodyEl,
       getRootEl,
     },
   });

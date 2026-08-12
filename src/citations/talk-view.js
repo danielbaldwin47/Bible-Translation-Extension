@@ -12,6 +12,7 @@
 
   const talkSource = () => root.__BTX.talkSource;
   const highlights = () => root.__BTX.highlights;
+  const panel = () => root.__BTX.panel;
 
   // Tags kept when sanitizing fetched talk HTML; everything else is unwrapped.
   const ALLOWED = new Set(['P', 'DIV', 'SPAN', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
@@ -97,18 +98,12 @@
     }
   }
 
-  // Scroll `scrollEl` to a target element talk-source located, and mark it.
-  function scrollToTarget(target, scrollEl, offset) {
+  // Mark the target element talk-source located, and ask the panel — the one
+  // owner of the body's scroll — to bring it into view.
+  function revealTarget(target, offset) {
     if (!target) return;
     target.classList.add('btx-cit-highlight');
-    // Scroll the real overflow container (.btx-body) to the target. offsetTop is
-    // relative to the fixed #btx-root, so use a viewport-rect delta instead.
-    if (scrollEl) {
-      const delta = target.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top;
-      scrollEl.scrollTop = Math.max(0, scrollEl.scrollTop + delta - (offset || 16));
-    } else {
-      target.scrollIntoView({ block: 'start' });
-    }
+    panel().scrollIntoView(target, { offset: offset || 16 });
   }
 
   // Esc closes the reader (same as "‹ Back"). One document-level handler; rebound
@@ -128,12 +123,13 @@
     if (escHandler) { document.removeEventListener('keydown', escHandler); escHandler = null; }
   }
 
-  // Public: render a talk into `bodyEl`.
+  // Public: render a talk into `host` — the container the panel's view host
+  // handed us. The reader never touches the panel body directly.
   // opts: { entry, source, onBack, autoScroll }
-  async function open(bodyEl, opts) {
+  async function open(host, opts) {
     const { entry, source, onBack } = opts;
     const autoScroll = opts.autoScroll !== false;
-    bodyEl.textContent = '';
+    host.textContent = '';
 
     const header = el('div', 'btx-talk-header');
     const back = el('button', 'btx-btn btx-talk-back', '‹ Back');
@@ -164,10 +160,10 @@
       header.appendChild(a);
       fullTalkLink = a;
     }
-    bodyEl.appendChild(header);
+    host.appendChild(header);
 
     const body = el('div', 'btx-talk-scroll');
-    bodyEl.appendChild(body);
+    host.appendChild(body);
     body.appendChild(el('div', 'btx-state-text', 'Loading…'));
 
     // The seam: talk-source decides live-vs-bundled and hands back a locator for
@@ -196,14 +192,13 @@
     body.appendChild(article);
     // Local highlights (saved on this machine, re-applied on reopen).
     try { highlights() && highlights().attach(article, entry.talkId); } catch (e) { /* non-fatal */ }
-    // Defer scroll until layout settles (two frames, so re-applied highlights and
-    // reflow are accounted for). Scroll the panel body (the overflow container),
-    // not the inner .btx-talk-scroll wrapper. Skipped when the user has turned off
-    // "open scrolled to the cited snippet".
+    // Defer until layout settles (two frames, so re-applied highlights and reflow
+    // are accounted for) — the sticky header's height is only measurable then.
+    // Skipped when the user has turned off "open scrolled to the cited snippet".
     if (autoScroll) {
       // The reader header is sticky, so offset the scroll target below it.
       requestAnimationFrame(() => requestAnimationFrame(() =>
-        scrollToTarget(loaded.findTarget(article), bodyEl, header.offsetHeight + 10)));
+        revealTarget(loaded.findTarget(article), header.offsetHeight + 10)));
     }
   }
 

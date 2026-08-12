@@ -169,6 +169,12 @@
 #btx-root .btx-body:hover::-webkit-scrollbar-thumb,
 #btx-root .btx-body.btx-scrolling::-webkit-scrollbar-thumb { background: rgba(128, 128, 128, 0.45); }
 
+/* One container per mounted view (see panel.js's view host). flow-root, so a
+   view's own margins stay inside it — the talk header's negative margins must
+   pull against .btx-body's padding, not collapse out through this box — while
+   staying a plain block, so sticky offsets still resolve against .btx-body. */
+#btx-root .btx-view { display: flow-root; }
+
 #btx-root .btx-reference {
   font-weight: 600;
   margin-bottom: 10px;
