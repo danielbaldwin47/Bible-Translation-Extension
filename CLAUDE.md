@@ -66,7 +66,8 @@ src/
     content.js             orchestrator: detect → worker/citations → panel; mode (citations-only on non-Bible), width persistence; citationView; applyThemeUntilAligned (re-applies theme at launch until the site toolbar height resolves)
   citations/
     cit-data.js            __BTX.citData    load/cache shards, sources, gunzip bundled talks; chapterData(slug,chap) → deduped entries + each cite's in-chapter verse span + uniqueTotal
-    cit-panel.js           __BTX.citPanel   two layouts (renderByVerse/renderBySource); anchorVerses dedup; formatVerses/verseLabel range labels (verseLabel exported, used by talk-view); renderByVerse pre-opens the source-type group for single-source verses; attachTools = filter box (matches speaker/title/label/snippet via row.dataset.btxSearch) + expand/collapse-all button (shown when uniqueTotal >= 4)
+    cit-view-model.js      __BTX.citVM (+ module.exports) PURE, no DOM: buildView(chapterData, {view,fullName,chapter,focusVerse}) → descriptor tree (verse / source-type groups, citation rows, uids, counts, range + summary labels, single-source pre-open); anchorVerses dedup; formatVerses/verseLabel; byFirstVerse/byDateDesc; toolbar state machine (initialState/filterPlan/applyPlan/toggleAllPlan/toggleLabel)
+    cit-panel.js           __BTX.citPanel   DOM adapter only (render) — builds elements from the descriptor tree and mirrors toolbar plans onto `[data-btx-uid]` nodes (filter box matches row.dataset.btxSearch; expand/collapse-all shown when uniqueTotal >= 4). No ordering/grouping/counting/data-derived labels here; the fixed chrome it does own is the loading + no-results lines, the filter placeholder, and the quote marks around a snippet. talk-view takes verseLabel from citVM directly
     highlights.js          __BTX.highlights local select-to-highlight in the reader; chrome.storage.local; re-apply on reopen
     talk-view.js           __BTX.talkView   inline reader (live GC / bundled), sanitizer, scroll-to-citation, sticky header ("‹ Back" + "Open full talk" + cited-verse label; Esc = back); STPJS footnote rendering (blue-superscript footRef + footnote numbers, hide Prev/Next, scroll to the cited body passage)
     citations.css
@@ -125,8 +126,10 @@ source-data/               GITIGNORED build input: the BYU DBs
   node tools/rederive-js-snippets.js
   node tools/validate-citations.js
   ```
-- **Checks:** `node tools/validate-books.js`, `node tools/validate-citations.js`;
-  syntax: `node --check <file>` (no test runner).
+- **Checks:** `node tools/validate-books.js`, `node tools/validate-citations.js`,
+  `node tools/validate-cit-view-model.js`; syntax: `node --check <file>` (no
+  test runner). Panel logic is testable only if it stays in `cit-view-model.js`
+  — put new ordering/grouping/labelling rules there, not in `cit-panel.js`.
 
 ## Gotchas
 
@@ -151,11 +154,13 @@ source-data/               GITIGNORED build input: the BYU DBs
   Translation↔Citations preserves scroll, open dropdowns, and filter text;
   invalidated on chapter change / settings re-render. `cit-panel.render`
   returns the wrapper node it builds.
-- Citations filter: hides non-matching `.btx-cit` rows and empty `details`
-  groups (`.btx-cit-hidden`), auto-opens surviving groups while filtering,
-  restores pre-filter open state on clear (`preFilterOpen`). The
-  expand/collapse-all label updates via a capture-phase `toggle` listener
-  ('toggle' doesn't bubble). Snippets clamp to 3 lines in CSS.
+- Citations filter: `citVM.filterPlan` decides what hides (`.btx-cit-hidden` on
+  non-matching rows and groups left empty), auto-opens surviving groups while
+  filtering, and restores the pre-filter open state on clear (`preFilterOpen`,
+  captured on the transition into filtering). `cit-panel` only mirrors the plan
+  onto `[data-btx-uid]` nodes and feeds the user's own opens back into the
+  state via a capture-phase `toggle` listener ('toggle' doesn't bubble).
+  Snippets clamp to 3 lines in CSS.
 - The talk reader header is position:sticky inside `.btx-body` (negative
   margins cancel the body padding); `scrollToCitation` takes an `offset` so
   the target lands below it. Esc = Back (document-level handler, rebound per

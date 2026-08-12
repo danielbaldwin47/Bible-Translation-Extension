@@ -107,6 +107,29 @@ _Avoid_: view (bare)
 One rendered `.btx-cit` row in the panel. In by-verse layout a row is one cite
 occurrence; in by-source layout rows are deduped to one per talk.
 
+**Citation view-model**:
+The pure module (`src/citations/cit-view-model.js`, `__BTX.citVM`) that turns a
+chapter's cites into descriptors. Every ordering, grouping, counting,
+open-state and data-derived label rule of Citations mode lives there;
+`cit-panel` only builds elements from what it returns, and owns nothing beyond
+fixed chrome (the loading and no-results lines, the filter placeholder, the
+quote marks around a snippet).
+_Avoid_: renderer, formatter
+
+**Descriptor**:
+A plain object describing one thing the panel will render, carrying a **uid**
+stable within one built view-model. A group descriptor (verse or source-type)
+carries its label, count chip and pre-open flag; a citation-row descriptor
+carries the speaker, corpus tag, range badge, snippet and filter haystack. The
+uid is how the DOM adapter maps element ↔ descriptor (`data-btx-uid`) and how
+toolbar state is keyed.
+
+**Plan**:
+The computed next state of the citations toolbar — which rows and groups hide,
+which groups open, what the expand/collapse-all button reads — returned by the
+view-model and applied by the panel. Filter clearing restores the open state
+captured when filtering began.
+
 **Highlight**:
 A user-made local text highlight inside the inline talk reader. Stored in
 `chrome.storage.local` on this machine only — never synced to a Church
