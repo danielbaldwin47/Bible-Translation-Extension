@@ -30,6 +30,9 @@ you as you navigate between chapters, scrolls along with the page, and is resiza
   are saved on your machine and re-applied when you reopen the talk. Click a
   highlight to remove it. (Not synced to your Church account.)
 - **Resizable** — set a width on the options page, or drag the panel's left edge.
+- **Scroll-sync, if you want it** — the translation follows the chapter as you
+  scroll; scroll the panel yourself and it stays put until the page moves again.
+  Turn it off on the options page and scrolling the page never moves the panel.
 - **Blends in** — copies the site's resolved colors/fonts via CSS variables, so it
   tracks theme and font-size changes live (no dependence on the site's class names).
 - **Caching + rate-limit handling** for translations; citation data is local.

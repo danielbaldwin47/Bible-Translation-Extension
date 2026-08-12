@@ -39,11 +39,14 @@
  *   itself — showChapter never fires events.
  *
  * Body scroll has exactly one owner and one writer. Each view either *owns* its
- * position (Citations, the talk reader: saved on the way out, restored on the
- * way back) or is *page-synced* (Translation: the page scroll is the source of
- * truth, so nothing is saved and the body is placed where the page says).
+ * position (Citations, the talk reader: restored on the way back to where it
+ * was left) or is *page-synced* (Translation: the page scroll is the source of
+ * truth, so it is placed where the page says instead).
  * viewRestoresScroll() is that rule, and it is why scroll-sync and
- * scroll-restore can no longer both write the same body.
+ * scroll-restore can no longer both write the same body. The `scrollSync`
+ * setting is an input to it: with sync off nothing is page-synced, so
+ * Translation owns its scroll like everything else — which is why every view
+ * records its offset on the way out even when nothing will read it.
  *
  * Every move routes through setBodyScroll, and almost all of them are instant:
  * tracking the page 1:1 is what makes the panel feel like the browser's own
@@ -52,7 +55,9 @@
  * panel then leaves it alone until the page scrolls again, and eases it back
  * rather than snapping. Nothing else animates, and the system's reduced-motion
  * preference is deliberately not consulted: the browser scrolls this page
- * smoothly regardless, and the panel matches the browser, not the OS.
+ * smoothly regardless, and the panel matches the browser, not the OS. A reader
+ * who wants none of it turns the `scrollSync` setting off: then the page never
+ * moves the body at all — no tracking and no re-alignment either.
  *
  * IIFE -> __BTX.panel (ADR-0002). The pure state core below is also exported
  * for Node (tools/validate-panel-state.js); the DOM shell is skipped there.
@@ -124,18 +129,40 @@
   // below), so saving and restoring an offset would be a second, competing
   // answer to "where should the body be?". Citations and the talk reader have
   // no such external driver, so they save and restore.
+  //
+  // With scroll-sync switched off (the `scrollSync` setting) there is no
+  // external driver for Translation either — so it owns its scroll like the
+  // rest, and coming back to it lands where the user left it rather than
+  // wherever the page happens to point.
   const PAGE_SYNCED_VIEWS = { translation: true };
 
-  function viewRestoresScroll(name) {
+  function viewRestoresScroll(name, scrollSync) {
+    if (scrollSync === false) return true;
     return !PAGE_SYNCED_VIEWS[name];
+  }
+
+  // Whether the page's scroll may move the body at all. Four inputs, each of
+  // which can move on its own; the shell re-asserts this after every one of
+  // them (refreshScrollSync) and nowhere else — rendering content is not a
+  // state change. `visible` must be explicit; the setting defaults to on, so an
+  // unknown value reads as on rather than switching the feature off.
+  function wantsScrollSync(s, opts) {
+    const o = opts || {};
+    if (o.visible !== true) return false;
+    if (s.collapsed) return false;
+    if (effectiveMode(s) !== 'translation') return false;
+    return o.scrollSync !== false;
   }
 
   // Record where the mounted view was scrolled, just before swapping it out —
   // this is what makes Citations (and "< Back" out of a talk) land where the
-  // user left off. A page-synced view records nothing; it is placed, not
-  // restored.
+  // user left off. Every view records, including a page-synced one whose offset
+  // nothing will read: ownership can change under a view (the `scrollSync`
+  // setting), and a view that recorded nothing while page-synced would come
+  // back to a `scrollTop` of 0 — the top of the chapter — rather than to where
+  // the reader actually was. Recording is inert; viewRestoresScroll decides
+  // whether the number is ever read.
   function saveViewScroll(v, scrollTop) {
-    if (!viewRestoresScroll(v.active)) return;
     const e = v.active && v.entries[v.active];
     if (e) e.scrollTop = Math.max(0, Math.round(Number(scrollTop) || 0));
   }
@@ -321,7 +348,8 @@
     module.exports = {
       createState, effectiveMode, selectMode, selectCitationView, setBible,
       createViews, saveViewScroll, selectView, keepView, settleView, dropViews,
-      viewRestoresScroll, scrollStep, easeRamp, floorStep, carryScroll, realignmentDone, isForeignScroll,
+      viewRestoresScroll, wantsScrollSync,
+      scrollStep, easeRamp, floorStep, carryScroll, realignmentDone, isForeignScroll,
       SCROLL_TAU_MS, SCROLL_RAMP_MS, SCROLL_MIN_STEP_PX, SCROLL_LIMITS,
     };
   }
@@ -340,7 +368,7 @@
   // The settings this panel handles by itself when they change. Exposed as
   // panel.HANDLED_KEYS so the orchestrator can skip its full re-render for a
   // change touching only these — one list, no mirror to drift.
-  const PANEL_HANDLED_KEYS = ['sidebarWidth', 'citationView', 'showCitationToggle', 'panelMode', 'panelCollapsed'];
+  const PANEL_HANDLED_KEYS = ['sidebarWidth', 'citationView', 'showCitationToggle', 'panelMode', 'panelCollapsed', 'scrollSync'];
 
   let ui = null; // refs once built
   const cbs = {}; // event handlers set by init()
@@ -348,7 +376,13 @@
   let views = createViews();
   let visible = false;
   let scrollRaf = null;
-  let scrollSyncOn = false;
+  // The `scrollSync` setting: may the page's scroll move the body at all? An
+  // input to wantsScrollSync *and* to who owns a view's scroll, so it is read
+  // before the first applyModeUI and re-read on every settings change. Distinct
+  // from pageScrollBound below, which is the mechanism the setting switches:
+  // whether the window listener is attached right now.
+  let scrollSync = true;
+  let pageScrollBound = false;
   let scrollFadeTimer = null;
 
   function el(tag, cls, text) {
@@ -569,6 +603,15 @@
       state.collapsed = next.panelCollapsed;
       applyCollapsedUI();
     }
+    // Switching sync off leaves the body exactly where it is and stops the page
+    // reaching it; switching it back on re-asserts the predicate, and attaching
+    // syncs immediately rather than waiting for the user's next page scroll.
+    // Content is unaffected either way — this changes who moves the body, not
+    // what is in it.
+    if (changed.includes('scrollSync') && next.scrollSync !== scrollSync) {
+      scrollSync = next.scrollSync;
+      refreshScrollSync(); // one of the predicate's four inputs just moved
+    }
     if (contentStale && visible && !orchestratorWillRender) requestRender();
   }
 
@@ -578,6 +621,7 @@
     await migrateLegacyLocal();
     const s = await SETTINGS().get();
     state = createState({ mode: s.panelMode, citationView: s.citationView, collapsed: s.panelCollapsed });
+    scrollSync = s.scrollSync; // before applyModeUI: it asserts the sync predicate
     applyWidth(s.sidebarWidth);
     applyCitToggleVisible(s.showCitationToggle);
     applyModeUI();
@@ -777,7 +821,7 @@
     ensureRoot();
     saveViewScroll(views, ui.body.scrollTop);
     const { action, entry } = selectView(views, spec.name, spec.key, spec.cache);
-    const restores = viewRestoresScroll(spec.name);
+    const restores = viewRestoresScroll(spec.name, scrollSync);
     if (action === 'restore') {
       mountView(entry);
       if (restores) restoreScroll(entry);
@@ -895,7 +939,10 @@
         if (st.copyright) setFooter(st.copyright);
         keepView(views, true); // a loaded chapter is worth re-mounting
         // The chapter is only now measurable, so this is where the view gets
-        // placed against the page. (No refreshScrollSync: none of its three
+        // placed against the page. A no-op when the setting is off: syncNow
+        // won't move a view that owns its scroll, and with sync off Translation
+        // does — showView already put it at the top (fresh) or at the offset it
+        // was left at (re-mounted). (No refreshScrollSync: none of its four
         // inputs moved — rendering content is not a state change.)
         placeSyncedView(viewNode());
       }
@@ -959,7 +1006,7 @@
     // firing while Citations is still mounted (the mode toggle re-asserts the
     // sync before the orchestrator swaps the view) would scroll the citation
     // list — and poison the offset it saves on its way out.
-    if (viewRestoresScroll(views.active)) return;
+    if (viewRestoresScroll(views.active, scrollSync)) return;
     const doc = document.scrollingElement || document.documentElement;
     const denom = doc.scrollHeight - doc.clientHeight;
     if (denom <= 0) return;
@@ -979,27 +1026,28 @@
     });
   }
 
-  // Scroll-sync only ever runs for a visible, expanded Translation view — the
-  // one invariant, asserted after every state change that could affect it
-  // (`visible`, `collapsed`, effective mode) and nowhere else.
+  // Scroll-sync only ever runs for a visible, expanded Translation view whose
+  // user hasn't switched it off — the one invariant, asserted after every state
+  // change that could affect it (`visible`, `collapsed`, effective mode, the
+  // `scrollSync` setting) and nowhere else.
   function refreshScrollSync() {
-    const wanted = visible && !state.collapsed && effectiveMode(state) === 'translation';
-    if (wanted && !scrollSyncOn) {
-      scrollSyncOn = true;
+    const wanted = wantsScrollSync(state, { visible, scrollSync });
+    if (wanted && !pageScrollBound) {
+      pageScrollBound = true;
       window.addEventListener('scroll', onPageScroll, { passive: true });
       // Don't wait for the user's next scroll to agree with the page. This is a
       // no-op unless the synced view is already mounted (expanding from
       // collapsed); on a mode switch the view is placed when it mounts.
       syncNow({ animate: false });
-    } else if (!wanted && scrollSyncOn) {
+    } else if (!wanted && pageScrollBound) {
       detachScrollSync();
     }
   }
 
   function detachScrollSync() {
     stopBodyScroll(); // scroll-sync is the only thing that eases; it stops here
-    if (!scrollSyncOn) return;
-    scrollSyncOn = false;
+    if (!pageScrollBound) return;
+    pageScrollBound = false;
     window.removeEventListener('scroll', onPageScroll);
     if (scrollRaf) cancelAnimationFrame(scrollRaf);
     scrollRaf = null;

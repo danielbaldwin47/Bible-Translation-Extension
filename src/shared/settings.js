@@ -92,6 +92,10 @@
     citationView: { def: 'source', norm: oneOf(['source', 'verse'], 'source') },
     // Show the citation-layout sub-toggle in the panel.
     showCitationToggle: { def: true, norm: bool(true) },
+    // Let the page's scroll move the Translation panel. Off means the panel
+    // never scrolls on its own — no tracking, no eased re-alignment; where the
+    // user puts it is where it stays.
+    scrollSync: { def: true, norm: bool(true) },
     // The panel's own state: preferred mode on Bible chapters, and whether the
     // panel is collapsed to its edge tab. Owned and written by __BTX.panel.
     panelMode: { def: 'translation', norm: oneOf(['translation', 'citations'], 'translation') },
