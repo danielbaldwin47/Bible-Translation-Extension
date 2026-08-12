@@ -127,6 +127,28 @@
     renderTranslations();
   }
 
+  // The single-value settings this form edits, each paired with the control
+  // that shows it. One table, so Save and the live refresh below can't
+  // disagree about which control holds which setting. The translation list is
+  // not here — it is built from the key test, not from one control.
+  const FIELDS = [
+    { key: 'apiKey', node: els.apiKey, read: () => els.apiKey.value, write: (v) => { els.apiKey.value = v; } },
+    { key: 'actOnNonEngOnly', node: els.actOnNonEngOnly, read: () => els.actOnNonEngOnly.checked, write: (v) => { els.actOnNonEngOnly.checked = v; } },
+    { key: 'scrollToSnippet', node: els.scrollToSnippet, read: () => els.scrollToSnippet.checked, write: (v) => { els.scrollToSnippet.checked = v; } },
+    { key: 'citationView', node: els.citationView, read: () => els.citationView.value, write: (v) => { els.citationView.value = v; } },
+    { key: 'showCitationToggle', node: els.showCitationToggle, read: () => els.showCitationToggle.checked, write: (v) => { els.showCitationToggle.checked = v; } },
+    {
+      key: 'sidebarWidth',
+      node: els.sidebarWidth,
+      read: () => els.sidebarWidth.value,
+      write: (v) => { els.sidebarWidth.value = String(v); els.sidebarWidthOut.textContent = v + 'px'; },
+    },
+  ];
+
+  // Fields the user has edited since the last Save. An unsaved edit outranks a
+  // change arriving from elsewhere, so those controls are left alone.
+  const dirty = new Set();
+
   async function save() {
     const enabled = checkedTranslations();
     let defaultId = els.defaultTranslation.value;
@@ -135,40 +157,28 @@
     // The module normalizes every field, so the form can hand over raw values.
     // patch, not replace: the form covers only these settings — the panel's own
     // state (panelMode, panelCollapsed) must survive a Save untouched.
-    settings = await SETTINGS.patch({
-      apiKey: els.apiKey.value,
+    const partial = {
       provider: C.PROVIDER_APIBIBLE,
       enabledTranslations: enabled,
       defaultTranslationId: defaultId,
-      actOnNonEngOnly: els.actOnNonEngOnly.checked,
-      scrollToSnippet: els.scrollToSnippet.checked,
-      citationView: els.citationView.value,
-      showCitationToggle: els.showCitationToggle.checked,
-      sidebarWidth: els.sidebarWidth.value,
-    });
+    };
+    for (const f of FIELDS) partial[f.key] = f.read();
+
+    settings = await SETTINGS.patch(partial);
+    dirty.clear();
     setStatus(els.saveStatus, 'Saved.', 'ok');
     setTimeout(() => setStatus(els.saveStatus, '', ''), 2000);
   }
 
-  // Paint `settings` onto the form. `keys` limits it to the settings that
-  // actually moved (a live change from another context); null = the whole form.
-  // The form is an editor of the stored settings, not a second copy of them:
-  // anything the panel changes while this page is open lands here too, so a
-  // later Save can't write a stale value back over it.
+  // Paint the stored settings onto the form. `keys` limits it to the settings
+  // that actually moved (a live change from another context); omit it for the
+  // whole form. The form is an editor of the stored settings, not a second
+  // copy of them: what the panel changes while this page is open lands here
+  // too, so a later Save can't write a stale value back over it.
   function fillForm(keys) {
-    const wants = (k) => !keys || keys.includes(k);
-    if (wants('apiKey')) els.apiKey.value = settings.apiKey;
-    if (wants('actOnNonEngOnly')) els.actOnNonEngOnly.checked = settings.actOnNonEngOnly;
-    if (wants('scrollToSnippet')) els.scrollToSnippet.checked = settings.scrollToSnippet;
-    if (wants('citationView')) els.citationView.value = settings.citationView;
-    if (wants('showCitationToggle')) els.showCitationToggle.checked = settings.showCitationToggle;
-    if (wants('sidebarWidth')) {
-      els.sidebarWidth.value = String(settings.sidebarWidth);
-      els.sidebarWidthOut.textContent = settings.sidebarWidth + 'px';
-    }
-    // Only meaningful once the key test has loaded the version list.
-    if (available.length && (wants('enabledTranslations') || wants('defaultTranslationId'))) {
-      renderTranslations();
+    for (const f of FIELDS) {
+      if (keys && (!keys.includes(f.key) || dirty.has(f.key))) continue;
+      f.write(settings[f.key]);
     }
   }
 
@@ -179,7 +189,13 @@
     // used to hardcode 280/900 can't drift apart.
     els.sidebarWidth.min = String(SETTINGS.SIDEBAR_WIDTH_MIN);
     els.sidebarWidth.max = String(SETTINGS.SIDEBAR_WIDTH_MAX);
-    fillForm(null);
+    fillForm();
+
+    for (const f of FIELDS) {
+      const mark = () => dirty.add(f.key);
+      f.node.addEventListener('input', mark);
+      f.node.addEventListener('change', mark);
+    }
 
     // Another context (the in-panel sub-toggle, a drag-resize, another synced
     // machine) changed a setting -> adopt it into the form. `own` writes are

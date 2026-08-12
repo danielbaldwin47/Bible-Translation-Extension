@@ -27,8 +27,9 @@
   // Settings the panel reacts to by itself (owning some, displaying others,
   // e.g. showCitationToggle). A change touching only these never needs the
   // orchestrator's full re-render — the panel adopts it and fires renderMode
-  // when it made the mounted content stale.
-  const PANEL_KEYS = ['sidebarWidth', 'citationView', 'showCitationToggle', 'panelMode', 'panelCollapsed'];
+  // when it made the mounted content stale. The list belongs to the panel; we
+  // read it rather than keeping a copy that could drift.
+  const PANEL_KEYS = panel.HANDLED_KEYS;
 
   let enabled = null; // { translations, defaultId, provider, hasKey }
   let selectedId = null;

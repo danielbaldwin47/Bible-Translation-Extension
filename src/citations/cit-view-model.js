@@ -201,7 +201,9 @@
   // data: citData.chapterData(...) — null when the book has no shard.
   function buildView(data, opts) {
     opts = opts || {};
-    const layout = opts.view === 'source' ? 'source' : 'verse';
+    // Callers pass the layout through from the settings; the fallback matches
+    // that schema's default ('source') rather than inventing a second one.
+    const layout = opts.view === 'verse' ? 'verse' : 'source';
     const where = `${opts.fullName || ''} ${opts.chapter}`.trim();
 
     if (!data || !data.verseOrder.length || data.uniqueTotal === 0) {

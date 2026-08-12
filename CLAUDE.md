@@ -172,12 +172,16 @@ source-data/               GITIGNORED build input: the BYU DBs
   external change and fires `renderMode` when they stale its content — unless
   the same write moved a non-panel key, in which case the orchestrator's full
   re-render covers it (its subscriber ignores changes touching only
-  `PANEL_KEYS`; the panel's `PANEL_HANDLED_KEYS` mirrors that list — the two
-  lists are asserted equal by `validate-settings.js`). The options Save uses
-  `SETTINGS.patch`, not `replace`, so panel keys absent from the form survive,
-  and the options page `subscribe`s so its form adopts what the panel changes
-  while it is open (`fillForm(changed)`); otherwise a Save from a stale form
-  would write the old layout/width back over the panel's. The old `chrome.storage.local` keys
+  `panel.HANDLED_KEYS`, which the panel owns — `content.js` reads that list
+  instead of restating it). The options Save uses `SETTINGS.patch`, not
+  `replace`, so panel keys absent from the form survive, and the options page
+  `subscribe`s so its form adopts what the panel changes while it is open
+  (`fillForm(changed)`, skipping fields the user has edited since the last
+  Save); otherwise a Save from a stale form would write the old layout/width
+  back over the panel's. The form's single-value settings live in one `FIELDS`
+  table (key + control + read/write) that Save and `fillForm` share; the
+  translation list is not in it (it is built from the key test, and is not
+  live-synced — see issue #21). The old `chrome.storage.local` keys
   (`btxPanelMode`/`btxPanelCollapsed`) are migrated once by `panel.init` —
   nothing else may name them (the ownership walk in `validate-settings.js`
   enforces it).

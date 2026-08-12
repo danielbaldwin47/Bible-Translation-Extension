@@ -289,20 +289,16 @@ const optionsSrc = fs.readFileSync(path.join(ROOT, 'src/options/options.js'), 'u
 check(/SETTINGS\.subscribe\(/.test(optionsSrc),
   'the options page subscribes to settings changes (no stale form behind the panel)');
 
-// The panel-handled key list is stated twice — in the panel (which acts on
-// those changes) and in the orchestrator (which ignores them). They must match,
-// or a change is either rendered twice or not at all.
-const contentSrc = fs.readFileSync(path.join(ROOT, 'src/content/content.js'), 'utf8');
-function keyList(src, name) {
-  const m = new RegExp(`const ${name} = \\[([^\\]]*)\\]`).exec(src);
-  return m ? m[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean) : null;
-}
-const handled = keyList(panelSrc, 'PANEL_HANDLED_KEYS');
-const ignored = keyList(contentSrc, 'PANEL_KEYS');
-check(handled && ignored && handled.join('|') === ignored.join('|'),
-  `panel.js PANEL_HANDLED_KEYS matches content.js PANEL_KEYS (${handled} vs ${ignored})`);
-check(!!handled && handled.includes('citationView'),
+// Which settings the panel handles by itself is the panel's own fact: the
+// orchestrator reads panel.HANDLED_KEYS rather than restating the list, so a
+// change can't end up rendered twice (or not at all) through drift.
+check(/HANDLED_KEYS: PANEL_HANDLED_KEYS/.test(panelSrc),
+  'panel.js exposes its handled-settings list as panel.HANDLED_KEYS');
+check(/PANEL_HANDLED_KEYS = \[[^\]]*'citationView'/.test(panelSrc),
   'the citation layout is a panel-handled setting');
+const contentSrc = fs.readFileSync(path.join(ROOT, 'src/content/content.js'), 'utf8');
+check(/PANEL_KEYS = panel\.HANDLED_KEYS/.test(contentSrc),
+  'content.js takes the panel-handled key list from the panel (no second copy)');
 
 storageChecks().then(() => {
   if (failures) {
