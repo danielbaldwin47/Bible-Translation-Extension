@@ -150,22 +150,46 @@
     setTimeout(() => setStatus(els.saveStatus, '', ''), 2000);
   }
 
+  // Paint `settings` onto the form. `keys` limits it to the settings that
+  // actually moved (a live change from another context); null = the whole form.
+  // The form is an editor of the stored settings, not a second copy of them:
+  // anything the panel changes while this page is open lands here too, so a
+  // later Save can't write a stale value back over it.
+  function fillForm(keys) {
+    const wants = (k) => !keys || keys.includes(k);
+    if (wants('apiKey')) els.apiKey.value = settings.apiKey;
+    if (wants('actOnNonEngOnly')) els.actOnNonEngOnly.checked = settings.actOnNonEngOnly;
+    if (wants('scrollToSnippet')) els.scrollToSnippet.checked = settings.scrollToSnippet;
+    if (wants('citationView')) els.citationView.value = settings.citationView;
+    if (wants('showCitationToggle')) els.showCitationToggle.checked = settings.showCitationToggle;
+    if (wants('sidebarWidth')) {
+      els.sidebarWidth.value = String(settings.sidebarWidth);
+      els.sidebarWidthOut.textContent = settings.sidebarWidth + 'px';
+    }
+    // Only meaningful once the key test has loaded the version list.
+    if (available.length && (wants('enabledTranslations') || wants('defaultTranslationId'))) {
+      renderTranslations();
+    }
+  }
+
   async function init() {
     settings = await SETTINGS.get();
-
-    els.apiKey.value = settings.apiKey;
-    els.actOnNonEngOnly.checked = settings.actOnNonEngOnly;
-    els.scrollToSnippet.checked = settings.scrollToSnippet;
-    els.citationView.value = settings.citationView;
-    els.showCitationToggle.checked = settings.showCitationToggle;
 
     // Slider range comes from the settings module, so the three places that
     // used to hardcode 280/900 can't drift apart.
     els.sidebarWidth.min = String(SETTINGS.SIDEBAR_WIDTH_MIN);
     els.sidebarWidth.max = String(SETTINGS.SIDEBAR_WIDTH_MAX);
-    const w = settings.sidebarWidth;
-    els.sidebarWidth.value = String(w);
-    els.sidebarWidthOut.textContent = w + 'px';
+    fillForm(null);
+
+    // Another context (the in-panel sub-toggle, a drag-resize, another synced
+    // machine) changed a setting -> adopt it into the form. `own` writes are
+    // this page's own Save, already on screen.
+    SETTINGS.subscribe(({ next, changed, own }) => {
+      if (own) return;
+      settings = next;
+      fillForm(changed);
+    });
+
     els.sidebarWidth.addEventListener('input', () => {
       els.sidebarWidthOut.textContent = els.sidebarWidth.value + 'px';
     });

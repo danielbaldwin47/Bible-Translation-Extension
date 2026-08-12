@@ -283,6 +283,27 @@ const optionsHtml = fs.readFileSync(path.join(ROOT, 'src/options/options.html'),
 check(!/id="sidebarWidth"[^>]*\b(min|max)=/.test(optionsHtml),
   'the options slider does not hardcode its range (set from the settings module)');
 
+// The options form edits the same settings the panel owns, so it must adopt
+// external changes instead of holding a copy that goes stale behind the panel.
+const optionsSrc = fs.readFileSync(path.join(ROOT, 'src/options/options.js'), 'utf8');
+check(/SETTINGS\.subscribe\(/.test(optionsSrc),
+  'the options page subscribes to settings changes (no stale form behind the panel)');
+
+// The panel-handled key list is stated twice — in the panel (which acts on
+// those changes) and in the orchestrator (which ignores them). They must match,
+// or a change is either rendered twice or not at all.
+const contentSrc = fs.readFileSync(path.join(ROOT, 'src/content/content.js'), 'utf8');
+function keyList(src, name) {
+  const m = new RegExp(`const ${name} = \\[([^\\]]*)\\]`).exec(src);
+  return m ? m[1].split(',').map((s) => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean) : null;
+}
+const handled = keyList(panelSrc, 'PANEL_HANDLED_KEYS');
+const ignored = keyList(contentSrc, 'PANEL_KEYS');
+check(handled && ignored && handled.join('|') === ignored.join('|'),
+  `panel.js PANEL_HANDLED_KEYS matches content.js PANEL_KEYS (${handled} vs ${ignored})`);
+check(!!handled && handled.includes('citationView'),
+  'the citation layout is a panel-handled setting');
+
 storageChecks().then(() => {
   if (failures) {
     console.error(`\n${failures} check(s) failed.`);
