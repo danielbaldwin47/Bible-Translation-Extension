@@ -163,9 +163,9 @@
   const LEGACY_MODE_KEY = 'btxPanelMode';
   const LEGACY_COLLAPSED_KEY = 'btxPanelCollapsed';
 
-  // The settings this panel handles by itself when they change. Mirrored by
-  // PANEL_KEYS in content.js — the orchestrator's subscriber ignores changes
-  // touching only these.
+  // The settings this panel handles by itself when they change. Exposed as
+  // panel.HANDLED_KEYS so the orchestrator can skip its full re-render for a
+  // change touching only these — one list, no mirror to drift.
   const PANEL_HANDLED_KEYS = ['sidebarWidth', 'citationView', 'showCitationToggle', 'panelMode', 'panelCollapsed'];
 
   let ui = null; // refs once built
@@ -699,6 +699,7 @@
 
   root.__BTX = Object.assign(root.__BTX || {}, {
     panel: {
+      HANDLED_KEYS: PANEL_HANDLED_KEYS.slice(),
       init,
       showChapter,
       hide,
