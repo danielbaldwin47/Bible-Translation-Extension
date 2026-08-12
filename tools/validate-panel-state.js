@@ -245,6 +245,42 @@ check(P.scrollStep(400, 1000, -5, TAU) === 400, 'a backwards timestamp holds pos
 check(P.scrollStep(250, 250, 16, TAU) === 250, 'a step toward where we already are stays put');
 check(P.scrollStep(undefined, 400, 16, TAU) >= 0, 'garbage input cannot produce a negative position');
 
+// ---- Ramp-in ----
+// A re-alignment must have a visible beginning: an exponential chase is
+// fastest on its first frame, which reads as being thrown. The ramp scales the
+// first fraction of a second so the move accelerates in, then eases out.
+console.log('easeRamp:');
+const RAMP = 260;
+eq(P.easeRamp(0, RAMP), 0, 'the move starts from a standstill');
+check(P.easeRamp(RAMP, RAMP) === 1, 'the ramp is fully open once it has elapsed');
+check(P.easeRamp(RAMP * 5, RAMP) === 1, '...and stays open after that');
+check(P.easeRamp(RAMP / 2, RAMP) > 0.4 && P.easeRamp(RAMP / 2, RAMP) < 0.6, 'halfway through the ramp is about half open');
+check(P.easeRamp(RAMP * 0.1, RAMP) < 0.1, 'it opens slowly at first (smoothstep, no corner)');
+check(P.easeRamp(100, 0) === 1, 'no ramp configured means fully open');
+check(P.easeRamp(-50, RAMP) === 0, 'a negative elapsed cannot open the ramp');
+
+// The ramp only slows the early frames; it must never stop the move arriving.
+let ramped = 0;
+for (let i = 0; i < 600; i++) ramped = P.scrollStep(ramped, 1000, 16, TAU, P.easeRamp(i * 16, RAMP));
+check(Math.abs(1000 - ramped) < 0.5, 'a ramped chase still converges');
+check(P.scrollStep(0, 1000, 16, TAU, 0) === 0, 'a fully closed ramp holds position');
+check(P.scrollStep(0, 1000, 16, TAU, 1) === P.scrollStep(0, 1000, 16, TAU), 'a fully open ramp is the plain chase');
+const early = P.scrollStep(0, 1000, 16, TAU, P.easeRamp(0, RAMP));
+const later = P.scrollStep(0, 1000, 16, TAU, P.easeRamp(RAMP, RAMP));
+check(early < later, 'the first frame moves less than a frame at full speed');
+
+// ---- Telling our own scroll from the user's ----
+// The panel must never fight the user for the body. Every write records where
+// it left the body; a 'scroll' event that doesn't match that is the user's, and
+// it detaches the panel from the page until the next re-alignment.
+console.log('isForeignScroll:');
+check(P.isForeignScroll(300, 300) === false, "the position we just wrote is our own scroll, not the user's");
+check(P.isForeignScroll(300.4, 300) === false, 'sub-pixel rounding by the browser is still our own scroll');
+check(P.isForeignScroll(340, 300) === true, 'a jump away from what we wrote is the user scrolling');
+check(P.isForeignScroll(260, 300) === true, '...in either direction');
+check(P.isForeignScroll(0, null) === true, 'a scroll before we have written anything is the user');
+check(P.isForeignScroll(0, undefined) === true, '...however that unwritten state is spelled');
+
 if (failures) {
   console.error(`\n${failures} check(s) failed.`);
   process.exit(1);

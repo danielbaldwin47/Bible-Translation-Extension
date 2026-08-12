@@ -43,10 +43,16 @@
  * way back) or is *page-synced* (Translation: the page scroll is the source of
  * truth, so nothing is saved and the body is placed where the page says).
  * viewRestoresScroll() is that rule, and it is why scroll-sync and
- * scroll-restore can no longer both write the same body. Every move routes
- * through setBodyScroll, which eases rather than jumps — except placement (a
- * view that just mounted has no previous position to ease from), scrollIntoView
- * reveals, and reduced motion.
+ * scroll-restore can no longer both write the same body.
+ *
+ * Every move routes through setBodyScroll, and almost all of them are instant:
+ * tracking the page 1:1 is what makes the panel feel like the browser's own
+ * scrolling. Exactly one move eases — re-alignment. The user may scroll the
+ * panel away from the page (`syncDetached`, detected by isForeignScroll); the
+ * panel then leaves it alone until the page scrolls again, and eases it back
+ * rather than snapping. Nothing else animates, and the system's reduced-motion
+ * preference is deliberately not consulted: the browser scrolls this page
+ * smoothly regardless, and the panel matches the browser, not the OS.
  *
  * IIFE -> __BTX.panel (ADR-0002). The pure state core below is also exported
  * for Node (tools/validate-panel-state.js); the DOM shell is skipped there.
@@ -188,20 +194,45 @@
   // tracks the page more tightly at the cost of a sharper jump on a mode
   // switch. (Instant moves don't come through here at all; setBodyScroll
   // short-circuits them. `tau <= 0` is only a guard against a nonsense value.)
-  function scrollStep(from, target, dt, tau) {
+  //   ramp  0..1 multiplier on the step, used to *start* the move gently (see
+  //         easeRamp). Defaults to 1 — full exponential ease-out.
+  function scrollStep(from, target, dt, tau, ramp) {
     const f = Number(from) || 0;
     const t = Number(target) || 0;
     if (!(tau > 0)) return t; // no easing configured — land on it
     if (!(dt > 0)) return f; // no time has passed, so nothing has moved
-    const k = Math.min(1, 1 - Math.exp(-dt / tau));
+    const r = ramp === undefined ? 1 : Math.min(1, Math.max(0, Number(ramp) || 0));
+    const k = Math.min(1, 1 - Math.exp(-dt / tau)) * r;
     return f + (t - f) * k;
+  }
+
+  // How much of the easing is "switched on" `elapsed` ms into a move. An
+  // exponential chase is fastest on its very first frame, which is what makes a
+  // long re-alignment feel like being thrown rather than carried. Ramping the
+  // step in over the first fraction of a second gives the move a beginning you
+  // can see: it accelerates in, then the exponential decelerates it out.
+  // Smoothstep, so there is no corner at either end.
+  function easeRamp(elapsed, rampMs) {
+    if (!(rampMs > 0)) return 1;
+    const x = Math.min(1, Math.max(0, (Number(elapsed) || 0) / rampMs));
+    return x * x * (3 - 2 * x);
+  }
+
+  // Did the body move because we moved it, or because the user did? Every write
+  // records the position it left behind; a 'scroll' event reporting anything
+  // else is the user's own, and the panel must yield to it rather than drag the
+  // body back. `expected` is null until we have written at all.
+  function isForeignScroll(actual, expected, tolerance) {
+    if (expected === null || expected === undefined) return true;
+    const tol = tolerance > 0 ? tolerance : 1;
+    return Math.abs((Number(actual) || 0) - expected) > tol;
   }
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
       createState, effectiveMode, selectMode, selectCitationView, setBible,
       createViews, saveViewScroll, selectView, keepView, settleView, dropViews,
-      viewRestoresScroll, scrollStep,
+      viewRestoresScroll, scrollStep, easeRamp, isForeignScroll,
     };
   }
   if (typeof document === 'undefined') return; // Node: pure core only
@@ -322,6 +353,7 @@
     resize.addEventListener('pointerdown', onResizeDown);
     // Show the scrollbar while scrolling, fade it ~1s after it stops.
     body.addEventListener('scroll', () => {
+      onBodyScrolled();
       body.classList.add('btx-scrolling');
       clearTimeout(scrollFadeTimer);
       scrollFadeTimer = setTimeout(() => body.classList.remove('btx-scrolling'), 1000);
@@ -494,27 +526,34 @@
   // just mounted, so there is no previous position to ease from) or the user
   // asked the system for reduced motion.
 
-  const SCROLL_TAU_MS = 90; // easing time constant; larger = slower, floatier
+  // Re-alignment feel. TAU is how fast it settles once moving; RAMP is how long
+  // it takes to get going. Both larger = gentler, more deliberate.
+  const SCROLL_TAU_MS = 300;
+  const SCROLL_RAMP_MS = 260;
   const SCROLL_SETTLE_PX = 0.5;
-  let bodyAnim = null; // { target, raf, last } while a chase is in flight
+  const SCROLL_OWN_PX = 1; // slack for the browser's own sub-pixel rounding
+  let bodyAnim = null; // { target, raf, last, started } while re-aligning
+  let lastWrittenTop = null; // where our last write left the body
+  // True once the user has scrolled the panel away from the page's position.
+  // While detached the panel keeps whatever position the user gave it; the next
+  // page scroll eases it back, and that is the only animation in the module.
+  let syncDetached = false;
 
-  // Queried on every page-scroll frame, so the MediaQueryList is made once and
-  // re-read (it stays live, so toggling the OS setting still takes effect).
-  let reducedMotionMq;
-  function reducedMotion() {
-    try {
-      if (reducedMotionMq === undefined) {
-        reducedMotionMq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
-      }
-      return !!(reducedMotionMq && reducedMotionMq.matches);
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // The one and only assignment to the body's scroll position.
+  // The one and only assignment to the body's scroll position. Reads the value
+  // back rather than trusting what we asked for: the browser clamps to the
+  // scrollable range, and the clamped number is what the resulting 'scroll'
+  // event will report, so it is what tells our own writes from the user's.
   function writeBodyScroll(px) {
     ui.body.scrollTop = px;
+    lastWrittenTop = ui.body.scrollTop;
+  }
+
+  // The user scrolled the panel themselves. Stop fighting them: drop any
+  // in-flight re-alignment and leave the body where they put it.
+  function onBodyScrolled() {
+    if (!ui || !isForeignScroll(ui.body.scrollTop, lastWrittenTop, SCROLL_OWN_PX)) return;
+    stopBodyScroll();
+    syncDetached = true;
   }
 
   function maxBodyScroll() {
@@ -543,25 +582,31 @@
     if (Math.abs(target - from) < SCROLL_SETTLE_PX) {
       writeBodyScroll(target);
       stopBodyScroll();
+      syncDetached = false; // caught up with the page — track it 1:1 again
       return;
     }
     const dt = bodyAnim.last ? Math.max(0, ts - bodyAnim.last) : 16;
+    if (!bodyAnim.started) bodyAnim.started = ts;
     bodyAnim.last = ts;
-    writeBodyScroll(scrollStep(from, target, dt, SCROLL_TAU_MS));
+    const ramp = easeRamp(ts - bodyAnim.started, SCROLL_RAMP_MS);
+    writeBodyScroll(scrollStep(from, target, dt, SCROLL_TAU_MS, ramp));
     bodyAnim.raf = requestAnimationFrame(stepBodyScroll);
   }
 
-  //   animate  ease toward `top` instead of landing on it. Off for placement.
+  //   animate  ease toward `top` instead of landing on it. Only scroll-sync's
+  //            re-alignment sets it; nothing else in the panel animates.
   function setBodyScroll(top, opts) {
     if (!ui) return;
     const target = Math.min(maxBodyScroll(), Math.max(0, Number(top) || 0));
-    if (!(opts && opts.animate) || reducedMotion()) {
+    if (!(opts && opts.animate)) {
       stopBodyScroll();
       writeBodyScroll(target);
       return;
     }
-    if (bodyAnim) { bodyAnim.target = target; return; } // retarget in flight
-    bodyAnim = { target, last: 0, raf: requestAnimationFrame(stepBodyScroll) };
+    // Retarget in flight: keep `started`, so a target that keeps moving while we
+    // re-align doesn't restart the ramp and stall the body mid-travel.
+    if (bodyAnim) { bodyAnim.target = target; return; }
+    bodyAnim = { target, last: 0, started: 0, raf: requestAnimationFrame(stepBodyScroll) };
   }
 
   // ---- View host -------------------------------------------------------------
@@ -772,9 +817,16 @@
 
   // ---- Proportional scroll-sync with the main page ----
   // In Translation mode the page is the source of truth for where the body
-  // sits. Nothing here writes scrollTop directly — it computes a target and
-  // hands it to setBodyScroll, which eases into it.
-  //   animate  false when this is placement (mounting a view, expanding the
+  // sits, and the panel tracks it *instantly* — one write per page-scroll
+  // frame, no easing — so following the page feels exactly like the browser's
+  // own scrolling rather than like something chasing it.
+  //
+  // Easing appears in exactly one situation: the user has scrolled the panel
+  // away from the page's position (`syncDetached`), and then scrolls the page
+  // again. That is a real jump — the body has to travel from where the user
+  // left it back to where the page now points — so it eases instead of
+  // teleporting. Once it arrives, tracking is 1:1 again.
+  //   animate  force it off for placement (mounting a view, expanding the
   //            panel): the body is appearing, not moving.
   function syncNow(opts) {
     if (!ui || state.collapsed) return;
@@ -789,8 +841,9 @@
     const fraction = Math.min(1, Math.max(0, doc.scrollTop / denom));
     const panelDenom = ui.body.scrollHeight - ui.body.clientHeight;
     if (panelDenom <= 0) return;
-    const animate = !opts || opts.animate !== false;
-    setBodyScroll(fraction * panelDenom, { animate });
+    const placing = opts && opts.animate === false;
+    setBodyScroll(fraction * panelDenom, { animate: syncDetached && !placing });
+    if (placing) syncDetached = false; // a placed view starts in agreement
   }
 
   function onPageScroll() {
