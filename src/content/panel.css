@@ -8,6 +8,12 @@
   --btx-top: 0px;               /* header pins to the site's sticky toolbar band */
   --btx-width: 380px;
   --btx-header-h: 44px;         /* matched to the site toolbar by theme.js when found */
+  /* The body's top and inline padding (the edges a view may need to cancel —
+     the talk reader's sticky header does). Set here, not on .btx-body, so that
+     header reads the numbers instead of restating them. Unlike the vars above,
+     theme.js never touches these. */
+  --btx-body-pad-top: 14px;
+  --btx-body-pad-x: 16px;
   --btx-bg: #ffffff;
   --btx-header-bg: #f0f0f0;
   --btx-fg: #2a2a2a;
@@ -150,7 +156,7 @@
 #btx-root .btx-body {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 14px 16px 18px;
+  padding: var(--btx-body-pad-top) var(--btx-body-pad-x) 18px;
   font-size: var(--btx-size);
   line-height: var(--btx-line);
   scrollbar-width: thin;        /* Firefox */
