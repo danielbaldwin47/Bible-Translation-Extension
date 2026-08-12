@@ -1,7 +1,8 @@
 /*
- * Options page logic. Loads/saves settings to chrome.storage.sync, tests the
- * api.bible key (via the worker), and lets the user pick which translations to
- * enable + the default. Shared constants are available on window.__BTX.
+ * Options page logic. Reads/writes settings through __BTX.settings (which owns
+ * the schema, defaults and normalization — this page never coerces a stored
+ * value itself), tests the api.bible key (via the worker), and lets the user
+ * pick which translations to enable + the default.
  *
  * Only api.bible is supported, and the list is filtered to the copyrighted
  * versions the user added (free public-domain/CC versions are hidden).
@@ -10,6 +11,7 @@
   'use strict';
 
   const C = window.__BTX.const;
+  const SETTINGS = window.__BTX.settings;
 
   const $ = (id) => document.getElementById(id);
   const els = {
@@ -31,7 +33,7 @@
   };
 
   let available = []; // all versions the key returns: [{id, name, abbr, copyright, provider}]
-  let settings = C.defaultSettings();
+  let settings = SETTINGS.defaults();
 
   function send(message) {
     return new Promise((resolve) => {
@@ -130,34 +132,32 @@
     let defaultId = els.defaultTranslation.value;
     if (!enabled.some((t) => t.id === defaultId)) defaultId = enabled.length ? enabled[0].id : '';
 
-    const next = {
-      apiKey: els.apiKey.value.trim(),
+    // The module normalizes every field, so the form can hand over raw values.
+    settings = await SETTINGS.replace({
+      apiKey: els.apiKey.value,
       provider: C.PROVIDER_APIBIBLE,
       enabledTranslations: enabled,
       defaultTranslationId: defaultId,
       actOnNonEngOnly: els.actOnNonEngOnly.checked,
       scrollToSnippet: els.scrollToSnippet.checked,
-      citationView: els.citationView.value === 'source' ? 'source' : 'verse',
+      citationView: els.citationView.value,
       showCitationToggle: els.showCitationToggle.checked,
-      sidebarWidth: Number(els.sidebarWidth.value) || 380,
-    };
-    await chrome.storage.sync.set({ [C.SETTINGS_KEY]: next });
-    settings = next;
+      sidebarWidth: els.sidebarWidth.value,
+    });
     setStatus(els.saveStatus, 'Saved.', 'ok');
     setTimeout(() => setStatus(els.saveStatus, '', ''), 2000);
   }
 
   async function init() {
-    const data = await chrome.storage.sync.get(C.SETTINGS_KEY);
-    settings = Object.assign(C.defaultSettings(), data[C.SETTINGS_KEY] || {});
+    settings = await SETTINGS.get();
 
-    els.apiKey.value = settings.apiKey || '';
-    els.actOnNonEngOnly.checked = settings.actOnNonEngOnly !== false;
-    els.scrollToSnippet.checked = settings.scrollToSnippet !== false;
-    els.citationView.value = settings.citationView === 'source' ? 'source' : 'verse';
-    els.showCitationToggle.checked = settings.showCitationToggle !== false;
+    els.apiKey.value = settings.apiKey;
+    els.actOnNonEngOnly.checked = settings.actOnNonEngOnly;
+    els.scrollToSnippet.checked = settings.scrollToSnippet;
+    els.citationView.value = settings.citationView;
+    els.showCitationToggle.checked = settings.showCitationToggle;
 
-    const w = Number(settings.sidebarWidth) || 380;
+    const w = settings.sidebarWidth;
     els.sidebarWidth.value = String(w);
     els.sidebarWidthOut.textContent = w + 'px';
     els.sidebarWidth.addEventListener('input', () => {

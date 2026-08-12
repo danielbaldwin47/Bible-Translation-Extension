@@ -11,6 +11,7 @@
   'use strict';
 
   const C = root.__BTX.const;
+  const SETTINGS = root.__BTX.settings;
   const BOOKS = root.__BTX.books;
   const detect = root.__BTX.detect;
   const theme = root.__BTX.theme;
@@ -35,7 +36,6 @@
   let scrollToSnippet = true; // open sources scrolled to the cited paragraph
   let citationView = 'source'; // citations layout: 'source' | 'verse'
   let showCitationToggle = true; // show the layout sub-toggle in the sidebar
-  let suppressNextViewRender = false; // sidebar toggle persists -> skip the echo re-render
   let citCache = null; // { key, node, scrollTop } — preserves the citations view
   let transCache = null; // { key, node, footer, scrollTop } — preserves translation view
 
@@ -307,35 +307,20 @@
     } catch (e) { /* ignore */ }
   }
 
-  function getSyncSettings() {
-    return new Promise((resolve) => {
-      try { chrome.storage.sync.get(C.SETTINGS_KEY, (d) => resolve((d && d[C.SETTINGS_KEY]) || {})); } catch (e) { resolve({}); }
-    });
-  }
-
-  function applyWidth(px) {
-    const w = Number(px);
-    if (Number.isFinite(w) && w > 0) panel.setWidth(w);
-  }
-
-  async function persistWidth(px) {
-    const s = await getSyncSettings();
-    s.sidebarWidth = Number(px);
-    try { chrome.storage.sync.set({ [C.SETTINGS_KEY]: s }); } catch (e) { /* ignore */ }
-  }
-
-  async function persistCitationView(view) {
-    const s = await getSyncSettings();
-    s.citationView = view;
-    try { chrome.storage.sync.set({ [C.SETTINGS_KEY]: s }); } catch (e) { /* ignore */ }
-  }
-
-  // True if two settings objects differ only in sidebarWidth (so a width change
-  // doesn't trigger a full translation re-render).
-  function sameExceptWidth(a, b) {
-    const ax = Object.assign({}, a || {}); delete ax.sidebarWidth;
-    const bx = Object.assign({}, b || {}); delete bx.sidebarWidth;
-    return JSON.stringify(ax) === JSON.stringify(bx);
+  // Adopt the settings that affect the panel. Called at startup and on every
+  // change; the module hands us already-normalized values.
+  function applySettings(s, changed) {
+    const touched = (key) => !changed || changed.includes(key);
+    if (touched('sidebarWidth')) panel.setWidth(s.sidebarWidth);
+    scrollToSnippet = s.scrollToSnippet;
+    if (touched('citationView')) {
+      citationView = s.citationView;
+      panel.setCitationView(citationView);
+    }
+    if (touched('showCitationToggle')) {
+      showCitationToggle = s.showCitationToggle;
+      panel.setCitationToggleEnabled(showCitationToggle);
+    }
   }
 
   // ---- Wire up ----
@@ -364,11 +349,10 @@
         if (effectiveMode() !== 'citations') return; // toggle only acts in citations mode
         citationView = v;
         panel.setCitationView(v);
-        suppressNextViewRender = true; // our own storage write shouldn't double-render
-        persistCitationView(v);
+        SETTINGS.patch({ citationView: v }); // echo arrives flagged as our own -> no double render
         renderCitations(current); // cache miss on the new key -> fresh render now (resets scroll to top)
       },
-      onResizeEnd: (px) => persistWidth(px),
+      onResizeEnd: (px) => SETTINGS.patch({ sidebarWidth: px }),
       onCollapsedChange: (collapsed) => {
         try { chrome.storage.local.set({ [COLLAPSED_KEY]: collapsed }); } catch (e) { /* ignore */ }
       },
@@ -377,13 +361,7 @@
     mode = (await getStored(MODE_KEY)) === 'citations' ? 'citations' : 'translation';
     // Restore how the user left the panel (collapsed to its edge tab, or open).
     if ((await getStored(COLLAPSED_KEY)) === true) panel.setCollapsed(true);
-    const initSettings = await getSyncSettings();
-    if (initSettings.sidebarWidth) applyWidth(initSettings.sidebarWidth);
-    scrollToSnippet = initSettings.scrollToSnippet !== false;
-    citationView = initSettings.citationView === 'verse' ? 'verse' : 'source';
-    showCitationToggle = initSettings.showCitationToggle !== false;
-    panel.setCitationToggleEnabled(showCitationToggle);
-    panel.setCitationView(citationView);
+    applySettings(await SETTINGS.get(), null);
 
     detect.setupNavigation(() => render());
 
@@ -391,24 +369,16 @@
       if (current && !userClosed) applyTheme();
     });
 
-    // Settings changed in options -> apply width live; re-render only if a
-    // translation-affecting field changed.
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'sync' && changes[C.SETTINGS_KEY]) {
-        const nv = changes[C.SETTINGS_KEY].newValue || {};
-        const ov = changes[C.SETTINGS_KEY].oldValue || {};
-        if (nv.sidebarWidth !== ov.sidebarWidth) applyWidth(nv.sidebarWidth);
-        scrollToSnippet = nv.scrollToSnippet !== false;
-        citationView = nv.citationView === 'verse' ? 'verse' : 'source';
-        panel.setCitationView(citationView);
-        const showTgl = nv.showCitationToggle !== false;
-        if (showTgl !== showCitationToggle) { showCitationToggle = showTgl; panel.setCitationToggleEnabled(showTgl); }
-        if (suppressNextViewRender) { suppressNextViewRender = false; return; } // sidebar toggle already rendered
-        if (sameExceptWidth(ov, nv)) return;
-        enabled = null;
-        currentKey = null; // force a re-render with the new settings
-        if (current) render();
-      }
+    // Settings changed (options page, or another tab) -> adopt them live, and
+    // re-render only when it wasn't our own write and something other than the
+    // width moved.
+    SETTINGS.subscribe(({ next, changed, own }) => {
+      applySettings(next, changed);
+      if (own) return; // we already rendered the change that caused this write
+      if (!changed.some((k) => k !== 'sidebarWidth')) return;
+      enabled = null;
+      currentKey = null; // force a re-render with the new settings
+      if (current) render();
     });
 
     // Toolbar icon toggles the panel.

@@ -49,7 +49,8 @@ Personal use only — api.bible + BYU/Church content are not redistributable, so
 ```
 manifest.json              MV3 (v1.3.0, "Translations & Citations for Gospel Library"); content_scripts order matters
 src/
-  shared/constants.js      __BTX.const  message types, storage keys, API bases, limits, defaultSettings (sidebarWidth, scrollToSnippet, citationView, showCitationToggle, …), isFreeVersion()
+  shared/constants.js      __BTX.const  message types, storage keys, API bases, limits, isFreeVersion()
+  shared/settings.js       __BTX.settings  THE owner of the `btxSettings` sync object: SCHEMA/KEYS/defaults (apiKey, provider, enabledTranslations, defaultTranslationId, actOnNonEngOnly, sidebarWidth, scrollToSnippet, citationView, showCitationToggle), one normalizer per setting, normalize/diff (pure), get/patch/replace, subscribe({next,prev,changed,own})
   shared/books.js          __BTX.books  66 Bible (slug→USFM/name) + non-Bible registry (BoM/D&C/PGP); bookFullName, isScriptureCollection, isKnownBook
   background/
     service-worker.js      classic worker; importScripts shared+libs; onMessage router
@@ -81,6 +82,7 @@ tools/
   build-citation-data.js   builds src/citations/data/ from the BYU DBs (node:sqlite + zlib); ALL_VOLUMES = {1..5}; extractCitation handles STPJS footnotes; guards require.main + module.exports { extractCitation, stpjsBodyPassage, … }
   rederive-js-snippets.js  rewrites STPJS (corpus T) snippets from the shipped talks/*.html.gz (no DBs needed)
   validate-books.js        asserts the 66-book Bible map + manifest file refs
+  validate-settings.js     asserts the settings schema/normalizers/diff, the storage+own-write layer (fake chrome), and that nothing outside src/shared/settings.js touches storage.sync
   validate-citations.js    asserts generated citation data integrity (>= 88 books)
   make-icons.js            regenerates icons
 source-data/               GITIGNORED build input: the BYU DBs
@@ -125,7 +127,8 @@ source-data/               GITIGNORED build input: the BYU DBs
   node tools/rederive-js-snippets.js
   node tools/validate-citations.js
   ```
-- **Checks:** `node tools/validate-books.js`, `node tools/validate-citations.js`;
+- **Checks:** `node tools/validate-books.js`, `node tools/validate-settings.js`,
+  `node tools/validate-citations.js`;
   syntax: `node --check <file>` (no test runner).
 
 ## Gotchas
@@ -142,8 +145,14 @@ source-data/               GITIGNORED build input: the BYU DBs
   passage, not the footnote-list span.
 - By-source rows are ordered by first cited verse (`byFirstVerse`); both
   citation layouts start collapsed.
-- Panel width persists in `settings.sidebarWidth` (sync). A width-only change
-  skips the heavy translation re-render (`sameExceptWidth` in `content.js`).
+- Settings go through `__BTX.settings` — never `chrome.storage.sync` directly
+  (`validate-settings.js` enforces this). `subscribe` reports `changed` (the
+  keys that actually moved) and `own` (this context made the write), which is
+  how `content.js` skips a re-render for a width-only change or for its own
+  citation-layout write.
+- Panel width persists in `settings.sidebarWidth` (sync), clamped 280–900 by
+  the settings normalizer, the panel's `clampWidth`, and the options slider —
+  keep the three in step.
 - SPA navigation is debounced via `currentKey` in `content.js`; mode toggles
   re-render directly (bypassing that dedupe). Reset `currentKey = null` to
   force a re-render.

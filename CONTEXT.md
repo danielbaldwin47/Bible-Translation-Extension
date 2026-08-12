@@ -117,3 +117,23 @@ _Avoid_: annotation (the Church site's own feature, which the extension never to
 The normalized JSON intermediate representation a fetched translation chapter
 is reduced to before rendering; the sanitizer renders only from IR, never raw
 HTML.
+
+## Settings
+
+**Setting**:
+One user preference in the synced `btxSettings` object (`chrome.storage.sync`)
+— api key, enabled translations, citation layout, panel width, … Owned
+end-to-end by `__BTX.settings`: schema, defaults, normalization, reads, writes
+and change events. Panel state kept per-machine in `chrome.storage.local`
+(selected translation, mode, collapsed, highlights) is *not* a setting.
+_Avoid_: config, preference (as a code term)
+
+**Normalizer**:
+The single function that turns a setting's raw stored value — missing, legacy,
+corrupted, wrong type — into a valid one. Exactly one per setting, so every
+context resolves the same stored bytes to the same value.
+
+**Own write**:
+A settings change made by the context now being notified of it. Chrome echoes
+a write back to its own author, so `subscribe` flags it (`own: true`) and a
+caller that already applied the change locally can skip re-applying it.
