@@ -62,7 +62,7 @@ src/
     page-hook.js           page-world history patch, injected via web-accessible <script src> (CSP-safe)
     theme.js               __BTX.theme  mirror(resolveTarget) → {refresh}: owns capture/apply of site colors/fonts (+ headerBg/headerH), the launch re-apply backoff (pure nextAlignDelay, module.exports for Node) and the theme/font/resize watching; resolveReadingContainer()
     sanitize.js            __BTX.sanitize  IR → DOM (text nodes only)
-    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews/viewRestoresScroll/wantsScrollSync; scrollStep/easeRamp/floorStep/carryScroll/realignmentDone/isForeignScroll + their tuning constants — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{offset,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
+    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews/viewRestoresScroll/wantsScrollSync; scrollStep/easeRamp/floorStep/carryScroll/realignmentDone/isForeignScroll/revealTop + their tuning constants — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{clearTop,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
     panel.css
     content.js             orchestrator: detect → worker/citations → panel data/content only (no panel state, no theme policy); answers panel's renderMode event; hands theme.mirror a getter for the panel root and calls refresh() once the panel is shown
   citations/
@@ -228,11 +228,27 @@ source-data/               GITIGNORED build input: the BYU DBs
   exactly one `ui.body.scrollTop =` (`writeBodyScroll`, reached only through
   `setBodyScroll`) — scroll-sync, view placement, restore and `scrollIntoView`
   all route through it. Views ask via
-  `panel.scrollIntoView(target, { offset, frames })` (`frames` defers the
+  `panel.scrollIntoView(target, { clearTop, frames })` (`frames` defers the
   measurement N animation frames for layout to settle) — cit-panel for the
   focus verse, talk-view for the citation scroll target. A scroll aimed at a
   view that has since been swapped out is dropped, not applied to whatever
-  replaced it. Same for a slow `render`: it fills a detached container and
+  replaced it. **Where** it lands is one rule for both callers, the pure
+  `revealTop({ targetTop, viewportH, maxScroll, clearTop })`: near the vertical
+  middle of the body (`SCROLL_REVEAL_FRACTION` of its *height*, not a pixel
+  count, so it holds at any panel width or window height), so the sentence
+  leading into the citation is readable rather than above the fold. Its two
+  clamps are the intended behaviour, not leftovers — a target too near the
+  start of the content scrolls to the top and sits where it falls (no jump, no
+  second scroll), one near the end scrolls to the bottom. That is also why the
+  range is a parameter rather than the shell's business: "as close as possible"
+  is part of the placement rule, so it is decided and tested with it.
+  `clearTop` is a floor, not a suggestion: the talk reader's target must not
+  sit under the sticky header even in a panel too short for centring to clear
+  it. Two things outrank the floor and both are tested — the top clamp (no
+  scroll position lifts content that is already above the fold; the sticky
+  header takes up flow, so nothing citable starts above it) and a panel shorter
+  than its own header (on screen beats clear). Neither call site passes a pixel
+  offset. Same for a slow `render`: it fills a detached container and
   can't paint over the view that replaced it — but `showTranslation` resolves
   its container *late* (whatever is mounted now), so the orchestrator's
   `reqToken` / `effectiveMode()` guards around `loadChapter` are what keep a
@@ -346,8 +362,9 @@ source-data/               GITIGNORED build input: the BYU DBs
   Snippets clamp to 3 lines in CSS.
 - The talk reader header is position:sticky inside its `.btx-view` (negative
   margins cancel the body padding — `.btx-view` adds no box of its own);
-  `talkView.revealTarget` passes an `offset` to `panel.scrollIntoView` so the target
-  lands below it. Esc = Back (document-level handler, rebound per open(),
+  `talkView.revealTarget` passes its measured height as `clearTop` to
+  `panel.scrollIntoView`, which is all it contributes — the placement itself is
+  the panel's. Esc = Back (document-level handler, rebound per open(),
   self-removing when its reader is gone). Its sticky `top` and that negative top
   margin must sum to zero — sticky pins the *margin* box, so `top: 0` rests the
   header a body-padding below the scrollport (the reason for #26; the CSS

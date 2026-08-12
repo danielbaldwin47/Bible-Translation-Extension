@@ -193,7 +193,9 @@
     host.textContent = '';
     host.appendChild(wrap);
     const focusEl = viewModel.focusUid && wrap.querySelector(`[data-btx-uid="${CSS.escape(viewModel.focusUid)}"]`);
-    if (focusEl) panel().scrollIntoView(focusEl, { offset: 50, frames: 1 });
+    // Where the focus verse lands is the panel's rule, not ours — the same one
+    // the talk reader gets, so the list arrives with context above it too.
+    if (focusEl) panel().scrollIntoView(focusEl, { frames: 1 });
   }
 
   root.__BTX = Object.assign(root.__BTX || {}, { citPanel: { render } });

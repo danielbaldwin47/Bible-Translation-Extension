@@ -427,6 +427,62 @@ const atBottom = realign(300, { page: 40, max: 300 });
 check(!atBottom.ranAway, 'a re-alignment whose carry hits the end of the body still terminates');
 check(atBottom.snapped <= LIM.settlePx, '...and still arrives rather than jumping the last stretch');
 
+// ---- Where a revealed target lands ----
+// Opening a citation used to park the target at the very top of the panel, so
+// the sentence leading into it was above the fold. The rule places it near the
+// vertical middle instead — expressed as a fraction of the visible body, so it
+// holds at any panel width or window height — and both clamp cases (a target
+// too near the top or the bottom of the content to be centered) are intended
+// behaviour, not an accident of clamping.
+console.log('revealTop:');
+const VIEW = 800;
+const MAX = 5000;
+function reveal(targetTop, opts) {
+  return P.revealTop(Object.assign({ targetTop, viewportH: VIEW, maxScroll: MAX }, opts || {}));
+}
+const middle = reveal(2000);
+check(2000 - middle > VIEW * 0.25, 'a revealed target has room above it for the paragraph leading in');
+check(2000 - middle < VIEW * 0.6, '...and still sits near the middle rather than the bottom');
+eq(reveal(2000), 2000 - VIEW * P.SCROLL_REVEAL_FRACTION, 'the gap above the target is a fraction of the visible body');
+// The same target in a taller panel keeps the same *proportion*, not the same
+// pixel count — the whole reason this is not a magic number.
+eq(P.revealTop({ targetTop: 2000, viewportH: 1600, maxScroll: MAX }), 2000 - 1600 * P.SCROLL_REVEAL_FRACTION,
+  'a taller panel leaves proportionally more context above');
+
+// Clamp cases: "as close as possible", never a failure and never a bounce.
+eq(reveal(10), 0, 'a target too near the top of the content scrolls to the top');
+eq(reveal(0), 0, '...including the very first thing in the view');
+eq(reveal(MAX + 500), MAX, 'a target near the end scrolls to the bottom, where it is still visible');
+check(reveal(MAX) <= MAX, 'no destination past the end of the scrollable range');
+eq(P.revealTop({ targetTop: 500, viewportH: VIEW, maxScroll: 0 }), 0, 'an unscrollable body stays at the top');
+
+// The talk reader's sticky header covers the top of the body. Centering clears
+// it on any ordinary panel, but that must be a floor in the rule rather than a
+// happy accident of the numbers.
+const HEAD = 64;
+check(2000 - reveal(2000, { clearTop: HEAD }) >= HEAD, 'a centered target clears the sticky header');
+eq(reveal(2000, { clearTop: HEAD }), reveal(2000), '...without the header changing where centering puts it');
+// A panel shorter than about twice the header: centering would tuck the target
+// under it, so the floor takes over.
+const short = P.revealTop({ targetTop: 2000, viewportH: 100, maxScroll: MAX, clearTop: HEAD });
+check(2000 - short >= HEAD, 'in a short panel the target is still pushed clear of the header');
+check(2000 - short > 100 * P.SCROLL_REVEAL_FRACTION, '...which is further down than centering alone would put it');
+// Degenerate: a panel shorter than its own header. Keeping the target on
+// screen outranks keeping it clear, so the floor gives way — landing it *at*
+// the bottom edge would be the same as not showing it.
+const tiny = P.revealTop({ targetTop: 2000, viewportH: 40, maxScroll: MAX, clearTop: HEAD });
+check(2000 - tiny < 40, 'a panel shorter than its header still keeps the target inside the body');
+// The one case the floor cannot honour: no scroll position lifts content that
+// is already above the fold, so the top clamp wins and the panel goes to the
+// top rather than inventing a negative scroll.
+eq(P.revealTop({ targetTop: 20, viewportH: VIEW, maxScroll: MAX, clearTop: HEAD }), 0,
+  'a target inside the top clamp scrolls to the top — no scroll position can clear it');
+
+// Garbage in cannot produce a garbage scroll position.
+check(P.revealTop({}) === 0, 'a placement with nothing to measure is the top');
+check(P.revealTop({ targetTop: -500, viewportH: VIEW, maxScroll: MAX }) === 0, 'a negative target clamps to the top');
+check(P.revealTop({ targetTop: 2000, viewportH: -10, maxScroll: MAX }) === 2000, 'a nonsense viewport leaves no gap rather than a negative one');
+
 // ---- Telling our own scroll from the user's ----
 // The panel must never fight the user for the body. Every write records where
 // it left the body; a 'scroll' event that doesn't match that is the user's, and

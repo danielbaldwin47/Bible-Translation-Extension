@@ -99,11 +99,14 @@
   }
 
   // Mark the target element talk-source located, and ask the panel — the one
-  // owner of the body's scroll — to bring it into view.
-  function revealTarget(target, offset) {
+  // owner of the body's scroll — to bring it into view. Where it lands is the
+  // panel's rule (near the middle, so the sentence leading into the citation is
+  // readable); all we contribute is our sticky header's height, which the
+  // target must never end up underneath.
+  function revealTarget(target, headerH) {
     if (!target) return;
     target.classList.add('btx-cit-highlight');
-    panel().scrollIntoView(target, { offset: offset || 16 });
+    panel().scrollIntoView(target, { clearTop: headerH });
   }
 
   // Esc closes the reader (same as "‹ Back"). One document-level handler; rebound
@@ -196,9 +199,10 @@
     // are accounted for) — the sticky header's height is only measurable then.
     // Skipped when the user has turned off "open scrolled to the cited snippet".
     if (autoScroll) {
-      // The reader header is sticky, so offset the scroll target below it.
+      // The reader header is sticky, so tell the panel how much of the top it
+      // covers — only measurable once layout has settled.
       requestAnimationFrame(() => requestAnimationFrame(() =>
-        revealTarget(loaded.findTarget(article), header.offsetHeight + 10)));
+        revealTarget(loaded.findTarget(article), header.offsetHeight)));
     }
   }
 
