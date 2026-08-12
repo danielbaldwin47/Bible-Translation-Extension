@@ -275,8 +275,8 @@ check(early < later, 'the first frame moves less than a frame at full speed');
 console.log('realignmentDone:');
 const LIM = P.SCROLL_LIMITS; // the shipped policy, not a copy of it
 const AFTER = LIM.stallAfterMs + 1;
-function done(distance, moved, elapsed, sinceTarget) {
-  return P.realignmentDone({ distance, moved, elapsed, sinceTarget: sinceTarget === undefined ? elapsed : sinceTarget }, LIM);
+function done(distance, moved, elapsed) {
+  return P.realignmentDone({ distance, moved, elapsed }, LIM);
 }
 check(done(0.4, 2, AFTER) === true, 'inside the settle threshold is arrived');
 check(done(-0.4, 2, AFTER) === true, '...approaching from either side');
@@ -289,8 +289,22 @@ check(done(50, null, 0) === false, 'the first frame has not moved yet — that i
 check(done(50, 0, 0) === false, 'a motionless frame during ramp-in is the ramp working, not a stall');
 check(done(50, 0, LIM.stallAfterMs - 1) === false, '...right up to the end of the ramp window');
 check(done(50, 0, AFTER) === true, '...and only counts once the ramp is open');
-check(done(50, 3, 99999, 99999) === true, 'past the cap, stop chasing whatever the distance');
-check(done(50, 3, 99999, 0) === false, 'the cap runs from the last retarget, so a moving target is not cut off mid-travel');
+check(done(50, 3, LIM.maxMs) === true, 'past the cap, stop chasing whatever the distance');
+check(done(50, 3, LIM.maxMs - 1) === false, '...but not one frame before it');
+
+// ---- Scrolling on while the panel is still re-aligning ----
+// The page's own movement is the panel's to mirror 1:1; only the detach gap
+// eases. Carrying the body by the page's delta is what keeps the two apart —
+// without it the chase trails a target that runs away from it, and the panel
+// floats along behind the page for as long as the user keeps scrolling.
+console.log('carryScroll:');
+const MAXPX = 1000;
+eq(P.carryScroll(200, 500, 560, MAXPX), 260, "the body moves exactly as far as the page's target did");
+eq(P.carryScroll(560 - 300, 500, 560, MAXPX) - (560 - 300), 60, 'and the gap it is closing survives the carry untouched');
+eq(P.carryScroll(200, 500, 440, MAXPX), 140, 'scrolling back up carries the same way');
+eq(P.carryScroll(20, 500, 400, MAXPX), 0, 'a carry past the top clamps at the top');
+eq(P.carryScroll(980, 500, 600, MAXPX), MAXPX, '...and past the bottom at the bottom');
+eq(P.carryScroll(300, 500, 500, MAXPX), 300, 'a target that did not move moves nothing');
 
 // The truth table above cannot see the frame-to-frame behaviour, which is
 // where the real bug lived. Run the actual loop with the shipped constants.
@@ -305,7 +319,7 @@ function realign(distance, opts) {
     if (started === null) started = ts;
     const moved = wasAt === null ? null : pos - wasAt;
     const elapsed = ts - started;
-    if (P.realignmentDone({ distance: distance - pos, moved, elapsed, sinceTarget: elapsed }, LIM)) {
+    if (P.realignmentDone({ distance: distance - pos, moved, elapsed }, LIM)) {
       return { frames, ms: elapsed, pos: distance, snapped: Math.abs(distance - pos) };
     }
     wasAt = pos;
@@ -326,6 +340,44 @@ for (const d of [50, 300, 1000]) {
   const rounded = realign(d, { round: true });
   check(!rounded.ranAway, `a ${d}px re-alignment terminates even when the browser rounds scrollTop`);
   check(rounded.frames > 3, `...and still animates (${rounded.frames} frames)`);
+}
+
+// Same loop, but the user keeps scrolling the page all the way through it. The
+// carry is what makes this identical to the still case: the panel matches the
+// page 1:1 the whole time and the gap closes on its own schedule. Get it wrong
+// and the panel trails the page until the scrolling stops.
+function realignWhileScrolling(gap, pxPerFrame) {
+  let target = 5000;
+  let pos = target - gap;
+  let wasAt = null;
+  let started = null;
+  let frames = 0;
+  for (let ts = 0; ts < 20000; ts += 16) {
+    if (started === null) started = ts;
+    const moved = wasAt === null ? null : pos - wasAt;
+    const elapsed = ts - started;
+    if (P.realignmentDone({ distance: target - pos, moved, elapsed }, LIM)) {
+      return { frames, ms: elapsed, gap: Math.abs(target - pos) };
+    }
+    wasAt = pos;
+    pos = P.scrollStep(pos, target, 16, P.SCROLL_TAU_MS, P.easeRamp(elapsed, P.SCROLL_RAMP_MS));
+    // ...and the page scrolls on. The shell carries the body by the same delta
+    // and doesn't count it as travel by the chase.
+    const next = target + pxPerFrame;
+    pos = P.carryScroll(pos, target, next, Infinity);
+    target = next;
+    wasAt = null;
+    frames++;
+  }
+  return { frames, ms: 20000, gap: Math.abs(target - pos), ranAway: true };
+}
+
+for (const speed of [8, 40]) {
+  const still = realign(300);
+  const scrolling = realignWhileScrolling(300, speed);
+  check(!scrolling.ranAway, `re-aligning while the page scrolls on at ${speed}px/frame still terminates`);
+  eq(scrolling.frames, still.frames, `...in the same ${still.frames} frames as a still page — scrolling on cannot prolong it`);
+  check(scrolling.gap <= LIM.settlePx, '...and it arrives rather than trailing the page');
 }
 
 // ---- Telling our own scroll from the user's ----

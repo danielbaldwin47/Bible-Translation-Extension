@@ -188,12 +188,12 @@
   // Normalizing on elapsed `dt` rather than counting frames is what keeps 60Hz
   // and 120Hz displays feeling the same.
   //
-  // While the page scrolls continuously the target moves every frame too, so
-  // the chase settles into a steady trail of roughly `tau x velocity` behind
-  // it — that lag *is* the smoothness, and it's the one knob: lower `tau`
-  // tracks the page more tightly at the cost of a sharper jump on a mode
-  // switch. (Instant moves don't come through here at all; setBodyScroll
-  // short-circuits them. `tau <= 0` is only a guard against a nonsense value.)
+  // The target is a *fixed* gap, never a moving one: a page scroll arriving
+  // mid-flight is carried 1:1 instead of retargeting the chase (see
+  // carryScroll), so `tau` is purely how long the gap takes to close and
+  // nothing here ever trails the page. (Instant moves don't come through here
+  // at all; setBodyScroll short-circuits them. `tau <= 0` is only a guard
+  // against a nonsense value.)
   //   ramp  0..1 multiplier on the step, used to *start* the move gently (see
   //         easeRamp). Defaults to 1 — full exponential ease-out.
   function scrollStep(from, target, dt, tau, ramp) {
@@ -236,16 +236,32 @@
     // freezes the body completely, so it moves exactly 0.
     stallPx: 0.05,
     stallAfterMs: SCROLL_RAMP_MS + 32, // ...but not before the ramp is open
-    maxMs: 1800, // backstop, measured from the last time the target moved
+    maxMs: 1800, // backstop, measured from the start (see carryScroll)
   };
+
+  // The page moved while a re-alignment is in flight. Two motions are running
+  // at once and they are not the same kind: the page's own movement is the
+  // panel's to mirror 1:1, and only the detach gap is what eases. So carry the
+  // body along by the page's delta and leave the gap untouched — the ease keeps
+  // its own schedule and finishes on time no matter how long the user keeps
+  // scrolling.
+  //
+  // Without this the chase is aimed at a target that runs away from it, so it
+  // settles into a trail of roughly `tau x velocity` behind the page for as
+  // long as the scrolling continues: the panel floats along after the page
+  // instead of arriving, which reads as lag rather than as smoothness.
+  function carryScroll(from, prevTarget, nextTarget, max) {
+    const shifted = (Number(from) || 0) + ((Number(nextTarget) || 0) - (Number(prevTarget) || 0));
+    const top = max === undefined ? shifted : Math.min(Number(max) || 0, shifted);
+    return Math.max(0, top);
+  }
 
   // Is the re-alignment over? Three ways to be done, and two of them exist
   // because a scroll container will not simply arrive where it is sent.
-  //   distance     how far is left to travel
-  //   moved        how far the body actually moved last frame — not how far it
-  //                was asked to. null on the first frame, which hasn't moved
-  //   elapsed      ms since the re-alignment began (drives the ramp)
-  //   sinceTarget  ms since the target last moved
+  //   distance  how far is left to travel
+  //   moved     how far the body actually moved last frame — not how far it was
+  //             asked to. null on the first frame, which hasn't moved
+  //   elapsed   ms since the re-alignment began (drives the ramp and the cap)
   //
   // The browser rounds scrollTop to whole pixels, so a chase aiming at a
   // fractional target eventually asks for sub-pixel steps that round away to
@@ -255,15 +271,16 @@
   // arrival would cancel the animation on its very first frame and turn every
   // re-alignment back into the teleport this whole seam exists to avoid.
   //
-  // `maxMs` runs from the last retarget, not from the start: while the user
-  // keeps scrolling the page the target moves every frame and the chase
-  // legitimately trails it, and a cap measured from the start would fire
-  // mid-travel and snap.
+  // `maxMs` runs from the start, and can do so *because* of `carryScroll`: a
+  // target that moves with the page no longer stretches the travel, so the gap
+  // this is closing only ever shrinks. It is a hard ceiling on how long the
+  // panel may stay in re-alignment — which is what guarantees it goes back to
+  // tracking 1:1 however long the user keeps scrolling.
   function realignmentDone(progress, limits) {
     const p = progress || {};
     const l = limits || SCROLL_LIMITS;
     if (Math.abs(Number(p.distance) || 0) <= l.settlePx) return true;
-    if ((Number(p.sinceTarget) || 0) >= l.maxMs) return true;
+    if ((Number(p.elapsed) || 0) >= l.maxMs) return true;
     const rampOpen = (Number(p.elapsed) || 0) >= l.stallAfterMs;
     const stalled = p.moved !== null && p.moved !== undefined && Math.abs(Number(p.moved) || 0) < l.stallPx;
     return rampOpen && stalled;
@@ -283,7 +300,7 @@
     module.exports = {
       createState, effectiveMode, selectMode, selectCitationView, setBible,
       createViews, saveViewScroll, selectView, keepView, settleView, dropViews,
-      viewRestoresScroll, scrollStep, easeRamp, realignmentDone, isForeignScroll,
+      viewRestoresScroll, scrollStep, easeRamp, carryScroll, realignmentDone, isForeignScroll,
       SCROLL_TAU_MS, SCROLL_RAMP_MS, SCROLL_LIMITS,
     };
   }
@@ -579,7 +596,7 @@
   // asked the system for reduced motion.
 
   const SCROLL_OWN_PX = 1; // slack for the browser's own sub-pixel rounding
-  // { target, raf, last, started, retargeted, wasAt } while re-aligning
+  // { target, raf, last, started, wasAt } while re-aligning
   let bodyAnim = null;
   let lastWrittenTop = null; // where our last write left the body
   // True once the user has scrolled the panel away from the page's position.
@@ -628,15 +645,13 @@
     const target = Math.min(bodyAnim.target, maxBodyScroll());
     bodyAnim.target = target;
     if (!bodyAnim.started) bodyAnim.started = ts;
-    if (!bodyAnim.retargeted) bodyAnim.retargeted = ts;
     // How far the body actually travelled last frame — not how far we asked it
-    // to. The difference is the whole point: see chaseSettled.
+    // to. The difference is the whole point: see realignmentDone.
     const moved = bodyAnim.wasAt === null ? null : from - bodyAnim.wasAt;
     if (realignmentDone({
       distance: target - from,
       moved,
       elapsed: ts - bodyAnim.started,
-      sinceTarget: ts - (bodyAnim.retargeted || bodyAnim.started),
     }, SCROLL_LIMITS)) {
       writeBodyScroll(target);
       stopBodyScroll();
@@ -661,14 +676,22 @@
       writeBodyScroll(target);
       return;
     }
-    // Retarget in flight: keep `started`, so a target that keeps moving while we
-    // re-align doesn't restart the ramp and stall the body mid-travel.
+    // The target moved while we're re-aligning — the page scrolled again. Carry
+    // the body the same distance right now (1:1, no easing) and the gap the
+    // chase is closing is unchanged, so it keeps both its ramp and its
+    // schedule. Anything else leaves the panel trailing the page for as long as
+    // the scrolling lasts.
     if (bodyAnim) {
-      if (target !== bodyAnim.target) bodyAnim.retargeted = 0; // restart the cap, not the ramp
-      bodyAnim.target = target;
+      if (target !== bodyAnim.target) {
+        writeBodyScroll(carryScroll(ui.body.scrollTop, bodyAnim.target, target, maxBodyScroll()));
+        // That move was the page's, not the chase's; counting it as a frame of
+        // travel would hide a stall on the next one.
+        bodyAnim.wasAt = null;
+        bodyAnim.target = target;
+      }
       return;
     }
-    bodyAnim = { target, last: 0, started: 0, retargeted: 0, wasAt: null, raf: requestAnimationFrame(stepBodyScroll) };
+    bodyAnim = { target, last: 0, started: 0, wasAt: null, raf: requestAnimationFrame(stepBodyScroll) };
   }
 
   // ---- View host -------------------------------------------------------------
@@ -888,6 +911,10 @@
   // again. That is a real jump — the body has to travel from where the user
   // left it back to where the page now points — so it eases instead of
   // teleporting. Once it arrives, tracking is 1:1 again.
+  //
+  // Scrolling on through that re-alignment does not prolong it: the page's part
+  // of the movement is handed to the body immediately (carryScroll) and only
+  // the gap eases, on a schedule the page can't stretch.
   //   animate  force it off for placement (mounting a view, expanding the
   //            panel): the body is appearing, not moving.
   function syncNow(opts) {

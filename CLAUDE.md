@@ -62,7 +62,7 @@ src/
     page-hook.js           page-world history patch, injected via web-accessible <script src> (CSP-safe)
     theme.js               __BTX.theme  mirror(resolveTarget) → {refresh}: owns capture/apply of site colors/fonts (+ headerBg/headerH), the launch re-apply backoff (pure nextAlignDelay, module.exports for Node) and the theme/font/resize watching; resolveReadingContainer()
     sanitize.js            __BTX.sanitize  IR → DOM (text nodes only)
-    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews/viewRestoresScroll; scrollStep/easeRamp/realignmentDone/isForeignScroll + their tuning constants — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{offset,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
+    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews/viewRestoresScroll; scrollStep/easeRamp/carryScroll/realignmentDone/isForeignScroll + their tuning constants — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{offset,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
     panel.css
     content.js             orchestrator: detect → worker/citations → panel data/content only (no panel state, no theme policy); answers panel's renderMode event; hands theme.mirror a getter for the panel root and calls refresh() once the panel is shown
   citations/
@@ -261,11 +261,20 @@ source-data/               GITIGNORED build input: the BYU DBs
   chase is fastest on its very first frame, which feels like being thrown; pure
   `easeRamp(elapsed, rampMs)` (smoothstep) scales the early frames so the move
   accelerates in, and `scrollStep(from, target, dt, tau, ramp)` eases it out.
-  Both normalize on elapsed time, so 60Hz and 120Hz feel the same. Retargeting
-  mid-flight keeps `started`, so a target that moves while we re-align doesn't
-  restart the ramp and stall the body mid-travel.
+  Both normalize on elapsed time, so 60Hz and 120Hz feel the same.
+- **Scrolling on through a re-alignment doesn't prolong it.** Two motions run
+  at once there and they are not the same kind: the page's own movement is the
+  panel's to mirror 1:1, and only the *detach gap* eases. So a page scroll
+  arriving mid-flight doesn't retarget the chase — pure `carryScroll(from,
+  prevTarget, nextTarget, max)` moves the body by the page's delta immediately
+  and the gap is untouched, so the ease keeps its ramp and its schedule.
+  Retargeting instead leaves the chase aimed at something running away from it,
+  and it settles into a trail of roughly `tau x velocity` behind the page for as
+  long as the user keeps scrolling — the panel floating along behind rather than
+  arriving, which reads as lag. (The carry is not travel by the chase, so it
+  clears `wasAt`: counting it would hide a stall on the next frame.)
 - **Arrival is not "distance is zero"** — pure `realignmentDone({ distance,
-  moved, elapsed, sinceTarget }, limits)` decides, and each of its three exits
+  moved, elapsed }, limits)` decides, and each of its three exits
   is load-bearing. `settlePx` (2) is arrival: the last pixels of an exponential
   are invisible, and chasing them keeps the panel in re-alignment for another
   half second after the motion has visibly ended. `stallPx` (0.05) catches the
@@ -277,8 +286,10 @@ source-data/               GITIGNORED build input: the BYU DBs
   `stallAfterMs`, because during ramp-in the body is meant to be nearly still —
   reading that as arrival cancels the animation on frame one and turns every
   re-alignment back into a teleport. `maxMs` (1800) is the backstop, measured
-  from the last *retarget* rather than from the start, so a target that keeps
-  moving while the user scrolls isn't cut off mid-travel. Get any of this wrong
+  from the *start* — which it can be only because of the carry above: a target
+  that moves with the page no longer stretches the travel, so the gap being
+  closed only ever shrinks and the cap is a hard ceiling on how long the panel
+  may stay in re-alignment at all. Get any of this wrong
   and the rAF loop never ends, `syncDetached` never clears, and every later page
   scroll takes the eased path instead of tracking 1:1 — the bug that shipped in
   the second cut. `validate-panel-state.js` runs the real loop with the shipped

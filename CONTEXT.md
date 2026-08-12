@@ -159,6 +159,11 @@ one movement in the panel that eases rather than happening instantly, since the
 body may have a long way to travel back. On arrival it is attached again and
 tracks the page 1:1.
 
+What eases is only the **gap** — how far the user took the panel from where the
+page points. Page scrolling that continues through a re-alignment is mirrored
+1:1 as always, so the gap closes on its own fixed schedule however long the
+user keeps scrolling; the panel never trails the page.
+
 **Citation layout**:
 How the Citations mode arranges rows: **by verse** (verse → source-type group →
 talks) or **by source** (one deduped row per talk, grouped by source type).
