@@ -165,16 +165,19 @@ source-data/               GITIGNORED build input: the BYU DBs
   keys that actually moved) and `own` (this context made the write), which is
   how `content.js` skips a re-render for panel-owned keys or for its own
   writes.
-- Panel state (mode, citation layout, collapsed, width) has exactly one owner:
-  `__BTX.panel`, persisted through `__BTX.settings` (`panelMode`,
-  `panelCollapsed`, `citationView`, `sidebarWidth`). The panel adopts external
-  changes itself and fires `renderMode` when they stale its content; the
-  orchestrator's settings subscriber ignores changes touching only
-  `PANEL_KEYS`. The options Save uses `SETTINGS.patch`, not `replace`, so
-  panel keys absent from the form survive. The old
-  `chrome.storage.local` keys (`btxPanelMode`/`btxPanelCollapsed`) are
-  migrated once by `panel.init` — nothing else may name them (the ownership
-  walk in `validate-settings.js` enforces it).
+- Panel state (mode, citation layout, collapsed, width) has one owner in the
+  reader: `__BTX.panel`, persisted through `__BTX.settings` (`panelMode`,
+  `panelCollapsed`, `citationView`, `sidebarWidth`). The options page also
+  writes `citationView`/`sidebarWidth`; the panel adopts those like any
+  external change and fires `renderMode` when they stale its content — unless
+  the same write moved a non-panel key, in which case the orchestrator's full
+  re-render covers it (its subscriber ignores changes touching only
+  `PANEL_KEYS`; the panel's `PANEL_HANDLED_KEYS` mirrors that list). The
+  options Save uses `SETTINGS.patch`, not `replace`, so panel keys absent from
+  the form survive. The old `chrome.storage.local` keys
+  (`btxPanelMode`/`btxPanelCollapsed`) are migrated once by `panel.init` —
+  nothing else may name them (the ownership walk in `validate-settings.js`
+  enforces it).
 - Panel width persists in `settings.sidebarWidth` (sync). The 280–900 bounds
   live only in `__BTX.settings` (`SIDEBAR_WIDTH_MIN/MAX`); `panel.clampWidth`
   and the options slider read them from there (`clampWidth` adds its own 90%

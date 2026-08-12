@@ -96,6 +96,11 @@
   const LEGACY_MODE_KEY = 'btxPanelMode';
   const LEGACY_COLLAPSED_KEY = 'btxPanelCollapsed';
 
+  // The settings this panel handles by itself when they change. Mirrored by
+  // PANEL_KEYS in content.js — the orchestrator's subscriber ignores changes
+  // touching only these.
+  const PANEL_HANDLED_KEYS = ['sidebarWidth', 'citationView', 'showCitationToggle', 'panelMode', 'panelCollapsed'];
+
   let ui = null; // refs once built
   const cbs = {}; // event handlers set by init()
   let state = createState({});
@@ -301,6 +306,10 @@
     if (changed.includes('sidebarWidth')) applyWidth(next.sidebarWidth);
     if (changed.includes('showCitationToggle')) applyCitToggleVisible(next.showCitationToggle);
     if (own) return;
+    // When the same write also moved a key the panel doesn't handle, the
+    // orchestrator's own settings subscriber will do a full re-render — firing
+    // renderMode too would race two renders into the same body.
+    const orchestratorWillRender = changed.some((k) => !PANEL_HANDLED_KEYS.includes(k));
     let contentStale = false;
     if (changed.includes('citationView') && next.citationView !== state.citationView) {
       state.citationView = next.citationView;
@@ -317,7 +326,7 @@
       state.collapsed = next.panelCollapsed;
       applyCollapsedUI();
     }
-    if (contentStale && visible) requestRender();
+    if (contentStale && visible && !orchestratorWillRender) requestRender();
   }
 
   async function init(handlers) {

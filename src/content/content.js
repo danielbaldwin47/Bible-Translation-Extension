@@ -24,9 +24,10 @@
 
   const SELECTION_KEY = 'btxSelectedTranslation';
 
-  // Settings the panel owns end-to-end. A change touching only these never
-  // needs the orchestrator's full re-render — the panel adopts it itself (and
-  // fires renderMode when it made the mounted content stale).
+  // Settings the panel reacts to by itself (owning some, displaying others,
+  // e.g. showCitationToggle). A change touching only these never needs the
+  // orchestrator's full re-render — the panel adopts it and fires renderMode
+  // when it made the mounted content stale.
   const PANEL_KEYS = ['sidebarWidth', 'citationView', 'showCitationToggle', 'panelMode', 'panelCollapsed'];
 
   let enabled = null; // { translations, defaultId, provider, hasKey }
@@ -233,6 +234,9 @@
 
   async function loadChapter() {
     clearTimeout(retryTimer);
+    // A stale caller (rate-limit retry timer, translation change) must not
+    // paint a translation spinner over a mounted citations view.
+    if (panel.effectiveMode() !== 'translation') return;
     const parsed = current;
     const tr = findTranslation(selectedId);
     if (!parsed || !tr) return;
@@ -267,6 +271,10 @@
     if (res.fums) fireFums(res.fums);
   }
 
+  function showError(message, retry) {
+    panel.showTranslation({ kind: 'error', message, retry });
+  }
+
   function handleError(error, label) {
     switch (error.code) {
       case C.ERR.NO_KEY:
@@ -274,24 +282,24 @@
         break;
       case C.ERR.RATE_LIMITED: {
         const wait = Math.min(Math.max(error.retryAfterMs || 2000, 1000), 60000);
-        panel.showTranslation({ kind: 'error', message: `Rate limited. Retrying in ${Math.ceil(wait / 1000)}s…`, retry: false });
+        showError(`Rate limited. Retrying in ${Math.ceil(wait / 1000)}s…`, false);
         retryTimer = setTimeout(loadChapter, wait);
         break;
       }
       case C.ERR.NOT_FOUND:
-        panel.showTranslation({ kind: 'error', message: `${label} doesn’t have this chapter available.`, retry: false });
+        showError(`${label} doesn’t have this chapter available.`, false);
         break;
       case C.ERR.INVALID_KEY:
-        panel.showTranslation({ kind: 'error', message: 'Your API key was rejected. Open settings (⚙) to fix it.', retry: false });
+        showError('Your API key was rejected. Open settings (⚙) to fix it.', false);
         break;
       case C.ERR.FORBIDDEN:
-        panel.showTranslation({ kind: 'error', message: `Your key isn’t licensed for ${label}.`, retry: false });
+        showError(`Your key isn’t licensed for ${label}.`, false);
         break;
       case C.ERR.NETWORK:
-        panel.showTranslation({ kind: 'error', message: 'Network error. Check your connection.' });
+        showError('Network error. Check your connection.');
         break;
       default:
-        panel.showTranslation({ kind: 'error', message: 'Could not load this chapter.' });
+        showError('Could not load this chapter.');
     }
   }
 

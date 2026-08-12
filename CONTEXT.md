@@ -169,8 +169,10 @@ One user preference in the synced `btxSettings` object (`chrome.storage.sync`)
 collapsed, … Owned end-to-end by `__BTX.settings`: schema, defaults,
 normalization, reads, writes and change events. The panel's own state
 (`panelMode`, `panelCollapsed`, `citationView`, `sidebarWidth`) is settings
-too — written only by `__BTX.panel`. What stays per-machine in
-`chrome.storage.local` (selected translation, highlights) is *not* a setting.
+too: in the reader only `__BTX.panel` writes it, and the panel adopts any
+external write (the options page edits `citationView`/`sidebarWidth` as one).
+What stays per-machine in `chrome.storage.local` (selected translation,
+highlights) is *not* a setting.
 _Avoid_: config, preference (as a code term)
 
 **Normalizer**:
