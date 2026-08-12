@@ -131,7 +131,7 @@ spinner, an error, or a render that painted nothing is never cached.
 
 **View host**:
 The part of `__BTX.panel` that mounts views: it holds one cached body per view
-name, remembers where each *scroll-owning* view was scrolled, invalidates them
+name, remembers where each view was scrolled, invalidates them
 all on a new chapter, and is the only writer of the panel body's scroll
 position. Callers name a view and say how to build it (`showView`) or ask for a
 node to be scrolled into sight (`scrollTo`); no module outside the panel holds
@@ -140,11 +140,14 @@ panel DOM.
 **Page-synced view**:
 A view whose scroll position is dictated by the reader page rather than by the
 view itself — today, only Translation, which mirrors the page as the user
-scrolls it. A page-synced view saves no offset and is never restored to one: it
-is **placed** against the page each time it mounts. Every other view
-(Citations, the talk reader) is *scroll-owning* — it saves where it was left
-and comes back there. Exactly one of the two applies to any view, which is what
-keeps scroll-sync and scroll-restore from writing the same body.
+scrolls it. A page-synced view is never restored to a saved offset:
+it is **placed** against the page each time it mounts. Every other view
+(Citations, the talk reader) is *scroll-owning* — it comes back to where it was
+left. Exactly one of the two applies to any view, which is what keeps
+scroll-sync and scroll-restore from writing the same body. *Recording* an
+offset, though, is unconditional: ownership can change under a view (see
+below), and one that recorded nothing while page-synced would come back to the
+top of the chapter rather than to where the reader was.
 
 A reader who doesn't want the panel moving on its own turns **scroll-sync**
 off (the `scrollSync` setting, on by default). That is not a milder follow: it

@@ -171,14 +171,16 @@ source-data/               GITIGNORED build input: the BYU DBs
   keys that actually moved) and `own` (this context made the write), which is
   how `content.js` skips a re-render for panel-owned keys or for its own
   writes.
-- Panel state (mode, citation layout, collapsed, width, scroll-sync) has one owner in the
+- Panel state (mode, citation layout, collapsed, width) has one owner in the
   reader: `__BTX.panel`, persisted through `__BTX.settings` (`panelMode`,
-  `panelCollapsed`, `citationView`, `sidebarWidth`). The options page also
+  `panelCollapsed`, `citationView`, `sidebarWidth`). *Handled* is not *owned*:
+  `scrollSync` is in `panel.HANDLED_KEYS` too, but the panel only ever reads it
+  — the options page is its sole writer. The options page also
   writes `citationView`/`sidebarWidth`; the panel adopts those like any
   external change and fires `renderMode` when they stale its content — unless
   the same write moved a non-panel key, in which case the orchestrator's full
   re-render covers it (its subscriber ignores changes touching only
-  `panel.HANDLED_KEYS`, which the panel owns — `content.js` reads that list
+  `panel.HANDLED_KEYS`, which the panel handles itself — `content.js` reads that list
   instead of restating it). The options Save uses `SETTINGS.patch`, not
   `replace`, so panel keys absent from the form survive, and the options page
   `subscribe`s so its form adopts what the panel changes while it is open
@@ -239,8 +241,9 @@ source-data/               GITIGNORED build input: the BYU DBs
   both — `viewRestoresScroll(name, scrollSync)` in the pure core is the rule (see
   `validate-panel-state.js`). Citations and the talk reader own theirs
   (`saveViewScroll` on the way out, `restoreScroll` on the way back).
-  Translation is page-synced: the page scroll is the source of truth, so it
-  saves nothing and `placeSyncedView` puts it where the page says — **unless the
+  Translation is page-synced: the page scroll is the source of truth, so it is
+  never restored to a saved offset and `placeSyncedView` puts it where the page
+  says — **unless the
   `scrollSync` setting is off**, in which case nothing is page-synced and
   Translation saves/restores like the rest (otherwise a Translation↔Citations
   round trip would come back placed against a page that is no longer allowed to

@@ -138,7 +138,9 @@ P.saveViewScroll(v, 90);
 r = show(v, 'citations', 'john/3::source');
 eq(r.action, 'restore', 'coming back to the same content re-mounts it');
 eq(r.entry.scrollTop, 420, '...at the scroll offset it was left at');
-eq(v.entries.translation.scrollTop, 0, '...while translation, being page-driven, saved nothing');
+// Translation records its offset like everyone else — it is being page-driven
+// that stops the number being *read*, not written (see scroll ownership below).
+eq(v.entries.translation.scrollTop, 90, '...and so was the page-driven view, harmlessly');
 
 v = P.createViews();
 show(v, 'citations', 'john/3::source');
@@ -211,15 +213,26 @@ eq(P.viewRestoresScroll('translation', false), true, 'sync off -> translation ow
 eq(P.viewRestoresScroll('translation', true), false, 'sync on -> translation is page-driven again');
 eq(P.viewRestoresScroll('citations', false), true, 'sync off changes nothing for citations');
 
+// Recording is unconditional; only *restoring* is a matter of ownership. A
+// page-synced view that recorded nothing would come back to the top of the
+// chapter if the setting took the page away from it while the view was cached.
 v = P.createViews();
 show(v, 'translation', 'john/3::niv');
 P.saveViewScroll(v, 500);
-eq(v.entries.translation.scrollTop, 0, 'a page-synced view records no offset to come back to');
+eq(v.entries.translation.scrollTop, 500, 'even a page-synced view records where it was left');
 
+// The ordering that made this necessary: read Translation with sync on, detour
+// to Citations, turn the setting off, come back. The offset recorded on the way
+// out is what the view now owns — a 0 there would jump the reader to the top.
 v = P.createViews();
 show(v, 'translation', 'john/3::niv');
-P.saveViewScroll(v, 500, false);
-eq(v.entries.translation.scrollTop, 500, 'with sync off it records where the user left it');
+P.saveViewScroll(v, 400); // leaving Translation while it was still page-synced
+show(v, 'citations', 'john/3::source');
+P.saveViewScroll(v, 120);
+r = show(v, 'translation', 'john/3::niv');
+eq(r.action, 'restore', 'Translation re-mounts across the detour');
+eq(P.viewRestoresScroll('translation', false), true, '...and with sync now off it owns its scroll');
+eq(r.entry.scrollTop, 400, '...so it comes back where the reader was, not to the top');
 
 v = P.createViews();
 show(v, 'citations', 'john/3::source');

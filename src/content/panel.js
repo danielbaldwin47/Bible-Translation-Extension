@@ -39,13 +39,14 @@
  *   itself — showChapter never fires events.
  *
  * Body scroll has exactly one owner and one writer. Each view either *owns* its
- * position (Citations, the talk reader: saved on the way out, restored on the
- * way back) or is *page-synced* (Translation: the page scroll is the source of
- * truth, so nothing is saved and the body is placed where the page says).
+ * position (Citations, the talk reader: restored on the way back to where it
+ * was left) or is *page-synced* (Translation: the page scroll is the source of
+ * truth, so it is placed where the page says instead).
  * viewRestoresScroll() is that rule, and it is why scroll-sync and
  * scroll-restore can no longer both write the same body. The `scrollSync`
  * setting is an input to it: with sync off nothing is page-synced, so
- * Translation owns its scroll like everything else.
+ * Translation owns its scroll like everything else — which is why every view
+ * records its offset on the way out even when nothing will read it.
  *
  * Every move routes through setBodyScroll, and almost all of them are instant:
  * tracking the page 1:1 is what makes the panel feel like the browser's own
@@ -155,10 +156,13 @@
 
   // Record where the mounted view was scrolled, just before swapping it out —
   // this is what makes Citations (and "< Back" out of a talk) land where the
-  // user left off. A page-synced view records nothing; it is placed, not
-  // restored.
-  function saveViewScroll(v, scrollTop, scrollSync) {
-    if (!viewRestoresScroll(v.active, scrollSync)) return;
+  // user left off. Every view records, including a page-synced one whose offset
+  // nothing will read: ownership can change under a view (the `scrollSync`
+  // setting), and a view that recorded nothing while page-synced would come
+  // back to a `scrollTop` of 0 — the top of the chapter — rather than to where
+  // the reader actually was. Recording is inert; viewRestoresScroll decides
+  // whether the number is ever read.
+  function saveViewScroll(v, scrollTop) {
     const e = v.active && v.entries[v.active];
     if (e) e.scrollTop = Math.max(0, Math.round(Number(scrollTop) || 0));
   }
@@ -374,9 +378,11 @@
   let scrollRaf = null;
   // The `scrollSync` setting: may the page's scroll move the body at all? An
   // input to wantsScrollSync *and* to who owns a view's scroll, so it is read
-  // before the first applyModeUI and re-read on every settings change.
+  // before the first applyModeUI and re-read on every settings change. Distinct
+  // from pageScrollBound below, which is the mechanism the setting switches:
+  // whether the window listener is attached right now.
   let scrollSync = true;
-  let scrollSyncOn = false; // is the page-scroll listener currently attached?
+  let pageScrollBound = false;
   let scrollFadeTimer = null;
 
   function el(tag, cls, text) {
@@ -813,7 +819,7 @@
   // Returns render's result (so callers can await it), or undefined on a hit.
   function showView(spec) {
     ensureRoot();
-    saveViewScroll(views, ui.body.scrollTop, scrollSync);
+    saveViewScroll(views, ui.body.scrollTop);
     const { action, entry } = selectView(views, spec.name, spec.key, spec.cache);
     const restores = viewRestoresScroll(spec.name, scrollSync);
     if (action === 'restore') {
@@ -1026,22 +1032,22 @@
   // `scrollSync` setting) and nowhere else.
   function refreshScrollSync() {
     const wanted = wantsScrollSync(state, { visible, scrollSync });
-    if (wanted && !scrollSyncOn) {
-      scrollSyncOn = true;
+    if (wanted && !pageScrollBound) {
+      pageScrollBound = true;
       window.addEventListener('scroll', onPageScroll, { passive: true });
       // Don't wait for the user's next scroll to agree with the page. This is a
       // no-op unless the synced view is already mounted (expanding from
       // collapsed); on a mode switch the view is placed when it mounts.
       syncNow({ animate: false });
-    } else if (!wanted && scrollSyncOn) {
+    } else if (!wanted && pageScrollBound) {
       detachScrollSync();
     }
   }
 
   function detachScrollSync() {
     stopBodyScroll(); // scroll-sync is the only thing that eases; it stops here
-    if (!scrollSyncOn) return;
-    scrollSyncOn = false;
+    if (!pageScrollBound) return;
+    pageScrollBound = false;
     window.removeEventListener('scroll', onPageScroll);
     if (scrollRaf) cancelAnimationFrame(scrollRaf);
     scrollRaf = null;
