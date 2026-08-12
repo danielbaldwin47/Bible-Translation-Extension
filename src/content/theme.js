@@ -19,9 +19,10 @@
  * mirror), applying, observing and the retry policy are all internal: callers
  * say "keep this element looking like the site", not how to get there.
  *
- * IIFE -> __BTX.theme (ADR-0002). The pure policies below (the retry backoff
- * and the dominant-paragraph pick) are also exported for Node
- * (tools/validate-theme-align.js); the DOM half is skipped there.
+ * IIFE -> __BTX.theme (ADR-0002). The pure policies below (the retry backoff,
+ * the dominant-paragraph pick, and which applies are redundant) are also
+ * exported for Node (tools/validate-theme-align.js); the DOM half is skipped
+ * there.
  */
 (function (root) {
   'use strict';
@@ -77,39 +78,36 @@
     return { size: winner.best.size, font: winner.best.font, line: winner.best.line };
   }
 
+  // ---- Pure "is this apply worth doing?" policy (Node-testable) -----------
+  // An apply that would change nothing must write nothing: the panel is woken
+  // by the reading column's *reflow* (see observe()), and the panel itself
+  // reserves page width with a margin on <html>, so wake-ups arrive that carry
+  // no new styling. Answering them with a write is how a watcher turns into a
+  // loop. Same captured values -> no write -> the wake-up dies here.
+  const VAR_KEYS = ['bg', 'fg', 'headerBg', 'headerH', 'font', 'size', 'line', 'dark'];
+
+  function sameVars(a, b) {
+    if (!a || !b) return false;
+    return VAR_KEYS.every((k) => a[k] === b[k]);
+  }
+
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { ALIGN_ATTEMPTS, ALIGN_MAX_DELAY, nextAlignDelay, MAX_TEXT_SAMPLES, dominantTextStyle };
+    module.exports = {
+      ALIGN_ATTEMPTS,
+      ALIGN_MAX_DELAY,
+      nextAlignDelay,
+      MAX_TEXT_SAMPLES,
+      dominantTextStyle,
+      VAR_KEYS,
+      sameVars,
+    };
   }
   if (typeof document === 'undefined') return; // Node: pure policy only
 
   // ---- DOM half ------------------------------------------------------------
 
-  // Find the element that holds the scripture text, using stable-ish hooks with
-  // graceful fallbacks. Used to mirror font-size/family/line-height.
-  function resolveReadingContainer() {
-    const candidates = [
-      'main [data-aid] p',
-      'main article p',
-      'main p',
-      'article p',
-      'main [data-aid]',
-      'main',
-      'article',
-    ];
-    for (const sel of candidates) {
-      const el = document.querySelector(sel);
-      if (el) return el;
-    }
-    return document.body;
-  }
-
-  // The block that holds the chapter, as opposed to one paragraph of it: the
-  // set of paragraphs we sample for the size to mirror, and the element whose
-  // reflow tells us the site's font-size setting moved. Same ADR-0005 rules —
-  // structural hooks only. Null when there is no plausible reading column, in
-  // which case the caller keeps the single-element fallback.
-  function resolveReadingColumn() {
-    const candidates = ['main [data-aid]', 'main article', 'main', 'article'];
+  // First element matching any of these selectors, in the order given.
+  function firstMatch(candidates) {
     for (const sel of candidates) {
       const el = document.querySelector(sel);
       if (el) return el;
@@ -117,27 +115,60 @@
     return null;
   }
 
+  // A computed line-height the panel can use: `normal` is not a number we can
+  // hand to CSS custom properties meaningfully, so it becomes our own default.
+  function lineHeightOf(cs) {
+    return cs.lineHeight && cs.lineHeight !== 'normal' ? cs.lineHeight : '1.6';
+  }
+
+  // Find the element that holds the scripture text, using stable-ish hooks with
+  // graceful fallbacks. Used for the panel's colors, and as the style of last
+  // resort when no reading column resolves.
+  function resolveReadingContainer() {
+    return firstMatch([
+      'main [data-aid] p',
+      'main article p',
+      'main p',
+      'article p',
+      'main [data-aid]',
+      'main',
+      'article',
+    ]) || document.body;
+  }
+
+  // The block that holds the chapter, as opposed to one paragraph of it: the
+  // set of paragraphs we sample for the size to mirror, and the element whose
+  // reflow tells us the site's font-size setting moved. Same ADR-0005 rules —
+  // structural hooks only. Null when there is no plausible reading column, in
+  // which case the caller keeps the single-element fallback.
+  //
+  // Widest first, deliberately — the opposite of resolveReadingContainer, which
+  // wants one representative element. The pick below is weighted by how much
+  // text each size covers, so a container wider than the chapter is harmless
+  // (the chapter still holds most of the text in it) while one narrower than
+  // the chapter is fatal: `main [data-aid]` resolves to the *first* such block
+  // in document order, which on a /study page wraps the chapter heading. Sample
+  // that alone and we are back to mirroring the heading, which is this bug.
+  function resolveReadingColumn() {
+    return firstMatch(['main', 'article', 'main [data-aid]']);
+  }
+
   // Computed size/family/line-height of the column's paragraphs, with how much
   // text each holds — the input to dominantTextStyle. Bounded by
   // MAX_TEXT_SAMPLES: this runs on every re-apply, including each step of the
-  // launch alignment chain.
+  // launch alignment chain. The chapter sits at the top of the column, so the
+  // budget is spent on it before it reaches anything below.
   function sampleTextStyles(column) {
     if (!column) return [];
     const out = [];
     const paras = column.querySelectorAll('p');
     for (const el of paras) {
       if (out.length >= MAX_TEXT_SAMPLES) break;
-      if (el.closest('#btx-root')) continue; // never mirror our own panel back into itself
       const chars = (el.textContent || '').trim().length;
       if (!chars) continue;
       const cs = getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-      out.push({
-        chars,
-        size: cs.fontSize,
-        font: cs.fontFamily,
-        line: cs.lineHeight && cs.lineHeight !== 'normal' ? cs.lineHeight : '1.6',
-      });
+      out.push({ chars, size: cs.fontSize, font: cs.fontFamily, line: lineHeightOf(cs) });
     }
     return out;
   }
@@ -212,7 +243,7 @@
     const text = dominantTextStyle(sampleTextStyles(resolveReadingColumn())) || {
       font: cs.fontFamily,
       size: cs.fontSize,
-      line: cs.lineHeight && cs.lineHeight !== 'normal' ? cs.lineHeight : '1.6',
+      line: lineHeightOf(cs),
     };
     return {
       bg,
@@ -286,24 +317,20 @@
     let alignFrame = null;
     let watch = null;
     let lastEl = null;
-    let lastVars = '';
+    let lastVars = null;
 
     // Apply the site's look to whatever is mounted; false = nothing to style.
-    //
-    // An apply that would change nothing writes nothing. That is what keeps the
-    // reading-column ResizeObserver from feeding itself: the panel reserves
-    // page width by setting a margin on <html>, so a write here can reflow the
-    // column that triggered us. Unchanged capture -> no write -> no reflow ->
-    // the loop stops after one pass.
+    // A capture identical to the last one writes nothing (sameVars, above) —
+    // that is what makes the reading-column ResizeObserver safe to answer. A
+    // freshly mounted panel always gets written, whatever it was styled with.
     function applyNow() {
       const el = resolveTarget();
       if (!el) return false;
       const vars = capture(); // always: this is what resolves the header height
-      const key = JSON.stringify(vars);
-      if (el !== lastEl || key !== lastVars) {
+      if (el !== lastEl || !sameVars(vars, lastVars)) {
         apply(el, vars);
         lastEl = el;
-        lastVars = key;
+        lastVars = vars;
       }
       if (watch) watch.retarget(); // an SPA nav may have swapped the column out
       return true;

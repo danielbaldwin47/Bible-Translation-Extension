@@ -123,6 +123,25 @@ eq(
 
 check(T.MAX_TEXT_SAMPLES > 0 && T.MAX_TEXT_SAMPLES <= 100, 'the paragraph sample is bounded (it runs on every re-apply)');
 
+// ---- redundant applies ----
+// The theme is woken by the reading column reflowing, and the panel reserves
+// page width with a margin on <html> — so wake-ups arrive carrying no new
+// styling. Writing on those is how a watcher becomes a loop.
+console.log('sameVars:');
+const vars = { bg: 'rgb(255,255,255)', fg: 'rgb(20,20,20)', headerBg: 'rgb(240,240,240)', headerH: 48, font: 'Body, serif', size: '17px', line: '27px', dark: false };
+const copy = () => Object.assign({}, vars);
+
+check(T.sameVars(vars, copy()), 'an unchanged capture is recognised as unchanged (no write, no loop)');
+check(T.sameVars(vars, vars), 'the same object is unchanged');
+check(!T.sameVars(vars, null), 'the first capture always writes (nothing to compare against)');
+check(!T.sameVars(null, vars), 'a missing capture is never "same"');
+for (const key of T.VAR_KEYS) {
+  const moved = copy();
+  moved[key] = key === 'headerH' ? 64 : key === 'dark' ? true : 'changed';
+  check(!T.sameVars(vars, moved), `a change to ${key} is written (it is a mirrored value)`);
+}
+check(T.sameVars(vars, Object.assign(copy(), { unmirrored: 'x' })), 'a field the panel does not mirror does not force a write');
+
 if (failures) {
   console.error(`\n${failures} check(s) failed.`);
   process.exit(1);

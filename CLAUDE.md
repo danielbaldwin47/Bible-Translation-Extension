@@ -88,7 +88,7 @@ tools/
   validate-settings.js     asserts the settings schema/normalizers/diff, the storage+own-write layer (fake chrome), and that nothing outside src/shared/settings.js touches storage.sync
   validate-options-form.js asserts the options form's pure core (initial checks, default-id pick, the Save patch for the translation list, the fill plan) + that the shell routes through it
   validate-citations.js    asserts generated citation data integrity (>= 88 books)
-  validate-theme-align.js  asserts the theme's pure policies: the launch re-apply backoff (nextAlignDelay — shape + that it terminates) and which paragraph style gets mirrored (dominantTextStyle)
+  validate-theme-align.js  asserts the theme's pure policies: the launch re-apply backoff (nextAlignDelay — shape + that it terminates), which paragraph style gets mirrored (dominantTextStyle), and which applies are redundant (sameVars)
   make-icons.js            regenerates icons
 source-data/               GITIGNORED build input: the BYU DBs
 ```
@@ -400,17 +400,27 @@ source-data/               GITIGNORED build input: the BYU DBs
   selector — ADR-0005, and the selector that looked right is what broke. With no
   resolvable column (`resolveReadingColumn` → null) the old single-element
   fallback stands.
+- `resolveReadingColumn` orders its candidates **widest first** (`main`,
+  `article`, `main [data-aid]`) — the opposite of `resolveReadingContainer`,
+  which wants one representative element and so goes narrowest first. Because
+  the pick above is weighted by how much text each size covers, a container
+  *wider* than the chapter is harmless (the chapter still holds most of the text
+  in it) while one *narrower* is fatal: `main [data-aid]` resolves to the first
+  such block in document order, which is the chapter heading's — sample that
+  alone and the panel mirrors the heading again, which is the bug.
 - The site's **font-size setting is not observable** where the theme's
   MutationObserver watches (`<html>`/`<body>` attributes): moving that slider
   used to leave the panel at its old size until a reload. The signal is a
   `ResizeObserver` on the resolved reading column — a font-size change reflows
-  it whatever the site mutated — feeding the *same* debounced re-apply. It
-  can't feed itself because **an apply that would change nothing writes
-  nothing** (`applyNow` compares the captured vars to the last write): the panel
-  reserves page width with a margin on `<html>`, so a write here can reflow the
-  very column that triggered it. `capture()` still runs on every tick — that is
-  what resolves the header height. `applyNow` also re-points the observer, so an
-  SPA nav that swaps the column out is picked up.
+  it whatever the site mutated — feeding the *same* debounced re-apply. Reflow
+  is a broad signal, so wake-ups arrive carrying no new styling (the panel
+  reserves page width with a margin on `<html>`, which reflows the column every
+  time the panel opens or is dragged). Answering those with a write is how a
+  watcher becomes a loop, so **an apply that would change nothing writes
+  nothing** — the pure `sameVars(a, b)` over `VAR_KEYS`, with a freshly mounted
+  panel root always written whatever it was styled with. `capture()` still runs
+  on every tick — that is what resolves the header height. `applyNow` also
+  re-points the observer, so an SPA nav that swaps the column out is picked up.
 - Commits here are unsigned (no signing key in the container) → GitHub shows
   "Unverified"; author email is `noreply@anthropic.com`. The git proxy port
   rotates and occasionally drops — retry pushes; clear any stale
