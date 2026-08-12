@@ -138,7 +138,7 @@ P.saveViewScroll(v, 90);
 r = show(v, 'citations', 'john/3::source');
 eq(r.action, 'restore', 'coming back to the same content re-mounts it');
 eq(r.entry.scrollTop, 420, '...at the scroll offset it was left at');
-eq(v.entries.translation.scrollTop, 90, '...and translation kept its own place');
+eq(v.entries.translation.scrollTop, 0, '...while translation, being page-driven, saved nothing');
 
 v = P.createViews();
 show(v, 'citations', 'john/3::source');
@@ -194,6 +194,56 @@ P.saveViewScroll(v, -30);
 eq(v.entries.citations.scrollTop, 0, 'a negative scroll clamps to the top');
 P.saveViewScroll(v, undefined);
 eq(v.entries.citations.scrollTop, 0, 'a missing scroll reads as the top');
+
+// ---- Who owns a view's scroll position ----
+// Translation mirrors the page, so it must not also save/restore an offset —
+// the two would fight over the same body on every page scroll.
+console.log('scroll ownership:');
+eq(P.viewRestoresScroll('citations'), true, 'citations owns its scroll position');
+eq(P.viewRestoresScroll('talk'), true, 'the talk reader owns its scroll position');
+eq(P.viewRestoresScroll('translation'), false, 'translation is page-driven, so it does not restore');
+eq(P.viewRestoresScroll(null), true, 'an unknown view defaults to owning its scroll');
+
+v = P.createViews();
+show(v, 'translation', 'john/3::niv');
+P.saveViewScroll(v, 500);
+eq(v.entries.translation.scrollTop, 0, 'a page-synced view records no offset to come back to');
+
+v = P.createViews();
+show(v, 'citations', 'john/3::source');
+P.saveViewScroll(v, 500);
+show(v, 'translation', 'john/3::niv');
+P.saveViewScroll(v, 800); // the page-synced view's own scroll must not leak
+r = show(v, 'citations', 'john/3::source');
+eq(r.action, 'restore', 'citations still re-mounts across a translation detour');
+eq(r.entry.scrollTop, 500, '...at its own saved offset, untouched by scroll-sync');
+
+// ---- Damped scroll step ----
+// The body eases toward a target instead of teleporting. Frame-rate
+// independent: the same elapsed time must cover the same distance whether the
+// display runs at 60Hz or 120Hz.
+console.log('scrollStep:');
+const TAU = 90;
+check(P.scrollStep(0, 1000, 16, TAU) > 0, 'a step moves toward the target');
+check(P.scrollStep(0, 1000, 16, TAU) < 1000, '...without arriving in one frame');
+check(P.scrollStep(1000, 0, 16, TAU) < 1000, 'a step moves downward too');
+check(P.scrollStep(1000, 0, 16, TAU) > 0, '...without overshooting past the target');
+
+const oneBigFrame = P.scrollStep(0, 1000, 16, TAU);
+const twoHalfFrames = P.scrollStep(P.scrollStep(0, 1000, 8, TAU), 1000, 8, TAU);
+check(Math.abs(oneBigFrame - twoHalfFrames) < 1, 'one 16ms frame covers what two 8ms frames do (frame-rate independent)');
+
+let pos = 0;
+for (let i = 0; i < 600; i++) pos = P.scrollStep(pos, 1000, 16, TAU);
+check(Math.abs(1000 - pos) < 0.5, 'the chase converges on its target');
+
+check(P.scrollStep(0, 1000, 16, 0) === 1000, 'a non-positive tau means no easing — land on the target');
+// A duplicate or backwards rAF timestamp must not be read as "arrive now":
+// no time has passed, so nothing moves. Teleporting here would be the snap.
+check(P.scrollStep(0, 1000, 0, TAU) === 0, 'a zero-length frame holds position');
+check(P.scrollStep(400, 1000, -5, TAU) === 400, 'a backwards timestamp holds position');
+check(P.scrollStep(250, 250, 16, TAU) === 250, 'a step toward where we already are stays put');
+check(P.scrollStep(undefined, 400, 16, TAU) >= 0, 'garbage input cannot produce a negative position');
 
 if (failures) {
   console.error(`\n${failures} check(s) failed.`);

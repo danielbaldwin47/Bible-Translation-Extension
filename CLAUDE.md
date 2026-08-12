@@ -62,7 +62,7 @@ src/
     page-hook.js           page-world history patch, injected via web-accessible <script src> (CSP-safe)
     theme.js               __BTX.theme  mirror(resolveTarget) → {refresh}: owns capture/apply of site colors/fonts (+ headerBg/headerH), the launch re-apply backoff (pure nextAlignDelay, module.exports for Node) and the theme/font/resize watching; resolveReadingContainer()
     sanitize.js            __BTX.sanitize  IR → DOM (text nodes only)
-    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{offset,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
+    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews/viewRestoresScroll; scrollStep — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{offset,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
     panel.css
     content.js             orchestrator: detect → worker/citations → panel data/content only (no panel state, no theme policy); answers panel's renderMode event; hands theme.mirror a getter for the panel root and calls refresh() once the panel is shown
   citations/
@@ -208,9 +208,10 @@ source-data/               GITIGNORED build input: the BYU DBs
 - View caching lives in the panel's **view host**, not the orchestrator.
   `panel.showView({ name, key, cache, render })` mounts one `.btx-view`
   container into `.btx-body`: same `name` + same `key` re-mounts the cached
-  container at the scroll offset it was left at (so Translation↔Citations
-  preserves scroll, open dropdowns, and filter text, and "‹ Back" out of a talk
-  lands where the list was), a different `key` calls `render(container)`. One
+  container (so Translation↔Citations preserves open dropdowns and filter text,
+  and "‹ Back" out of a talk lands where the list was), a different `key` calls
+  `render(container)`. Where it re-mounts *scrolled to* depends on who owns that
+  view's scroll — see the ownership bullet below. One
   cache slot per name — `translation` (key = chapter + version), `citations`
   (key = chapter + layout + focus verse), `talk` (`cache: false`, never
   re-mounted). `showChapter` drops every cached view, which covers chapter
@@ -221,7 +222,10 @@ source-data/               GITIGNORED build input: the BYU DBs
   yes, spinner/no-key/error no, so a retry rebuilds — and `settleView` refuses
   a render that threw or left the container empty (a `loadChapter` that bails
   after its await must not cache a blank Translation tab).
-- `panel` is the only writer of `.btx-body`'s scrollTop. Views ask via
+- `panel` is the only writer of `.btx-body`'s scrollTop, and `panel.js` has
+  exactly one `ui.body.scrollTop =` (`writeBodyScroll`, reached only through
+  `setBodyScroll`) — scroll-sync, view placement, restore and `scrollIntoView`
+  all route through it. Views ask via
   `panel.scrollIntoView(target, { offset, frames })` (`frames` defers the
   measurement N animation frames for layout to settle) — cit-panel for the
   focus verse, talk-view for the citation scroll target. A scroll aimed at a
@@ -231,6 +235,39 @@ source-data/               GITIGNORED build input: the BYU DBs
   its container *late* (whatever is mounted now), so the orchestrator's
   `reqToken` / `effectiveMode()` guards around `loadChapter` are what keep a
   stale chapter response off the wrong view.
+- Each view either **owns** its scroll position or is **page-synced**, never
+  both — `viewRestoresScroll(name)` in the pure core is the rule (see
+  `validate-panel-state.js`). Citations and the talk reader own theirs
+  (`saveViewScroll` on the way out, `restoreScroll` on the way back).
+  Translation is page-synced: the page scroll is the source of truth, so it
+  saves nothing and `placeSyncedView` puts it where the page says. Before this,
+  restore and `syncNow` both wrote the body and the next page-scroll frame
+  silently undid the restore. `syncNow` refuses to write unless the *page-synced
+  view is the mounted one* — a sync firing while Citations is still up (the mode
+  toggle re-asserts sync before the orchestrator swaps views) would otherwise
+  scroll the citation list and poison the offset it saves on its way out.
+- **Moving** the body eases; **placing** it doesn't. `setBodyScroll(top, {
+  animate })` is the seam: scroll-sync is the only caller that animates, via a
+  damped chase (pure `scrollStep(from, target, dt, tau)`, τ = 90ms, normalized
+  on elapsed time so 60Hz and 120Hz feel the same; retarget mid-flight is just a
+  new target; stops within 0.5px; cancelled by `mountView`, `showChapter` and
+  `detachScrollSync`, so collapsing, switching mode and hiding all end it).
+  Everything else is instant, and deliberately: **placement** on mount (no
+  previous position to ease from — `placeOnMount` runs it twice, once next
+  frame, because a fresh body is still reflowing), `restoreScroll`,
+  `scrollIntoView` reveals (each caller reveals its target as part of *opening*
+  a view, so easing would scroll through content the user never asked to see),
+  and `prefers-reduced-motion: reduce`. While the page scrolls continuously the
+  chase trails it by roughly τ × velocity — that lag is the smoothness, and τ is
+  the one knob: lower tracks tighter, at the cost of a sharper mode-switch jump.
+- `refreshScrollSync` is called only where its predicate
+  (`visible && !collapsed && effectiveMode === 'translation'`) can move:
+  `applyModeUI`, `applyCollapsedUI`, `hide()`. Rendering content is not a state
+  change — don't re-assert it from `showTranslation`. On attach it calls
+  `syncNow` itself so expanding from collapsed agrees with the page without
+  waiting for a scroll event; on a *mode* switch that call is a no-op (Citations
+  is still the mounted view, and `syncNow` won't touch it) and `placeSyncedView`
+  at mount is what lands it.
 - Citations filter: `citVM.filterPlan` decides what hides (`.btx-cit-hidden` on
   non-matching rows and groups left empty), auto-opens surviving groups while
   filtering, and restores the pre-filter open state on clear (`preFilterOpen`,

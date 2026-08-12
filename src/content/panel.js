@@ -20,7 +20,8 @@
  *   showView({ name, key, cache, render })  mount the named view; see the view
  *                                  host section below. Returns render's result.
  *   scrollIntoView(target, { offset, frames })  scroll the body to a node
- *                                  inside the mounted view
+ *                                  inside the mounted view (instant: callers
+ *                                  reveal a target as part of opening a view)
  *   showTranslation(state)         render a translation-mode body state into
  *                                  the mounted view:
  *                                    { kind:'loading', label }
@@ -36,6 +37,16 @@
  *   context); the orchestrator answers by rendering that mode's content.
  *   After showChapter() the orchestrator renders the current effectiveMode()
  *   itself — showChapter never fires events.
+ *
+ * Body scroll has exactly one owner and one writer. Each view either *owns* its
+ * position (Citations, the talk reader: saved on the way out, restored on the
+ * way back) or is *page-synced* (Translation: the page scroll is the source of
+ * truth, so nothing is saved and the body is placed where the page says).
+ * viewRestoresScroll() is that rule, and it is why scroll-sync and
+ * scroll-restore can no longer both write the same body. Every move routes
+ * through setBodyScroll, which eases rather than jumps — except placement (a
+ * view that just mounted has no previous position to ease from), scrollIntoView
+ * reveals, and reduced motion.
  *
  * IIFE -> __BTX.panel (ADR-0002). The pure state core below is also exported
  * for Node (tools/validate-panel-state.js); the DOM shell is skipped there.
@@ -93,18 +104,32 @@
   // A *view* is a named body of panel content: 'translation', 'citations',
   // 'talk'. The host keeps at most one cached body per name, tagged with a
   // caller-supplied content key. Same name + same key => the very same DOM is
-  // re-mounted, at the scroll offset it was left at; a different key (another
-  // chapter, another citation layout, another translation) means rebuild.
-  // Nothing outside the panel decides when a body may be reused.
+  // re-mounted (at the scroll offset it was left at, if it is a view that owns
+  // its scroll — see viewRestoresScroll); a different key (another chapter,
+  // another citation layout, another translation) means rebuild. Nothing
+  // outside the panel decides when a body may be reused.
 
   function createViews() {
     return { active: null, entries: {} };
   }
 
+  // Which views own their scroll position. Translation mode does not: there the
+  // page is the source of truth and the body mirrors it (see scroll-sync
+  // below), so saving and restoring an offset would be a second, competing
+  // answer to "where should the body be?". Citations and the talk reader have
+  // no such external driver, so they save and restore.
+  const PAGE_SYNCED_VIEWS = { translation: true };
+
+  function viewRestoresScroll(name) {
+    return !PAGE_SYNCED_VIEWS[name];
+  }
+
   // Record where the mounted view was scrolled, just before swapping it out —
-  // this is what makes Translation<->Citations (and "< Back" out of a talk)
-  // land where the user left off.
+  // this is what makes Citations (and "< Back" out of a talk) land where the
+  // user left off. A page-synced view records nothing; it is placed, not
+  // restored.
   function saveViewScroll(v, scrollTop) {
+    if (!viewRestoresScroll(v.active)) return;
     const e = v.active && v.entries[v.active];
     if (e) e.scrollTop = Math.max(0, Math.round(Number(scrollTop) || 0));
   }
@@ -145,10 +170,38 @@
     v.active = null;
   }
 
+  // ---- Pure scroll easing (Node-testable) ---------------------------------
+  // The body never jumps: every move eases toward its target. One frame of an
+  // exponential chase — the remaining distance decays with time constant `tau`,
+  // so the step is proportional to how far there is left to go. Small moves
+  // (following a page scroll frame by frame) resolve in about a frame and read
+  // as locked to the page; a mode switch worth thousands of pixels visibly
+  // eases. Retargeting mid-flight needs no special case: the next call just
+  // gets a new target.
+  //
+  // Normalizing on elapsed `dt` rather than counting frames is what keeps 60Hz
+  // and 120Hz displays feeling the same.
+  //
+  // While the page scrolls continuously the target moves every frame too, so
+  // the chase settles into a steady trail of roughly `tau x velocity` behind
+  // it — that lag *is* the smoothness, and it's the one knob: lower `tau`
+  // tracks the page more tightly at the cost of a sharper jump on a mode
+  // switch. (Instant moves don't come through here at all; setBodyScroll
+  // short-circuits them. `tau <= 0` is only a guard against a nonsense value.)
+  function scrollStep(from, target, dt, tau) {
+    const f = Number(from) || 0;
+    const t = Number(target) || 0;
+    if (!(tau > 0)) return t; // no easing configured — land on it
+    if (!(dt > 0)) return f; // no time has passed, so nothing has moved
+    const k = Math.min(1, 1 - Math.exp(-dt / tau));
+    return f + (t - f) * k;
+  }
+
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
       createState, effectiveMode, selectMode, selectCitationView, setBible,
       createViews, saveViewScroll, selectView, keepView, settleView, dropViews,
+      viewRestoresScroll, scrollStep,
     };
   }
   if (typeof document === 'undefined') return; // Node: pure core only
@@ -413,6 +466,7 @@
 
   function showChapter(ctx) {
     ensureRoot();
+    stopBodyScroll(); // a chase aimed at the outgoing chapter dies with it
     dropViews(views); // a different chapter — nothing cached still applies
     visible = true;
     ui.rootEl.style.display = '';
@@ -428,8 +482,86 @@
     if (!ui) return;
     visible = false;
     ui.rootEl.style.display = 'none';
-    detachScrollSync();
+    refreshScrollSync(); // `visible` just moved — one of the predicate's inputs
     updatePageReserve();
+  }
+
+  // ---- The body's scroll position -------------------------------------------
+  // Every move of .btx-body's scrollTop goes through here: scroll-sync, view
+  // placement, restore, and scrollIntoView. That is what makes "the panel is
+  // the only writer" checkable rather than aspirational, and it is where the
+  // no-snap rule lives — a move eases unless it is *placement* (a view that
+  // just mounted, so there is no previous position to ease from) or the user
+  // asked the system for reduced motion.
+
+  const SCROLL_TAU_MS = 90; // easing time constant; larger = slower, floatier
+  const SCROLL_SETTLE_PX = 0.5;
+  let bodyAnim = null; // { target, raf, last } while a chase is in flight
+
+  // Queried on every page-scroll frame, so the MediaQueryList is made once and
+  // re-read (it stays live, so toggling the OS setting still takes effect).
+  let reducedMotionMq;
+  function reducedMotion() {
+    try {
+      if (reducedMotionMq === undefined) {
+        reducedMotionMq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+      }
+      return !!(reducedMotionMq && reducedMotionMq.matches);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // The one and only assignment to the body's scroll position.
+  function writeBodyScroll(px) {
+    ui.body.scrollTop = px;
+  }
+
+  function maxBodyScroll() {
+    return Math.max(0, ui.body.scrollHeight - ui.body.clientHeight);
+  }
+
+  function stopBodyScroll() {
+    if (!bodyAnim) return;
+    cancelAnimationFrame(bodyAnim.raf);
+    bodyAnim = null;
+  }
+
+  // Read the live position each frame rather than integrating our own: the
+  // browser may clamp it (content shorter than we thought) and the user may
+  // scroll the body by hand mid-flight. Either way the chase continues from
+  // where the body actually is.
+  function stepBodyScroll(ts) {
+    if (!ui || !bodyAnim) return;
+    const from = ui.body.scrollTop;
+    // Re-clamp every frame, not just at the start: if the body shrinks while
+    // we're chasing (a render finishing, a filter hiding rows), a target past
+    // the new bottom is one the browser will never let us reach — and the
+    // settle test would never pass, leaving the rAF loop running forever.
+    const target = Math.min(bodyAnim.target, maxBodyScroll());
+    bodyAnim.target = target;
+    if (Math.abs(target - from) < SCROLL_SETTLE_PX) {
+      writeBodyScroll(target);
+      stopBodyScroll();
+      return;
+    }
+    const dt = bodyAnim.last ? Math.max(0, ts - bodyAnim.last) : 16;
+    bodyAnim.last = ts;
+    writeBodyScroll(scrollStep(from, target, dt, SCROLL_TAU_MS));
+    bodyAnim.raf = requestAnimationFrame(stepBodyScroll);
+  }
+
+  //   animate  ease toward `top` instead of landing on it. Off for placement.
+  function setBodyScroll(top, opts) {
+    if (!ui) return;
+    const target = Math.min(maxBodyScroll(), Math.max(0, Number(top) || 0));
+    if (!(opts && opts.animate) || reducedMotion()) {
+      stopBodyScroll();
+      writeBodyScroll(target);
+      return;
+    }
+    if (bodyAnim) { bodyAnim.target = target; return; } // retarget in flight
+    bodyAnim = { target, last: 0, raf: requestAnimationFrame(stepBodyScroll) };
   }
 
   // ---- View host -------------------------------------------------------------
@@ -438,20 +570,34 @@
   // host decides between building and re-mounting what it already has.
 
   function mountView(entry) {
+    stopBodyScroll(); // a chase aimed at the outgoing view must not survive it
     ui.body.textContent = '';
     ui.body.appendChild(entry.node);
     ui.footer.textContent = entry.footer || '';
   }
 
-  function restoreScroll(entry) {
-    const top = entry.scrollTop;
-    ui.body.scrollTop = top;
-    // A second pass next frame: a re-mounted view can still be reflowing (web
-    // fonts, re-applied highlights) when the first assignment lands. Skipped if
-    // the view was swapped out again in between.
+  // Position a view that has just mounted, twice: once now and once next frame.
+  // A freshly mounted body can still be reflowing (web fonts, re-applied
+  // highlights, a translation still growing) when the first pass lands, and its
+  // scroll height is what both callers below measure against. The second pass
+  // is skipped if the view was swapped out again in between.
+  function placeOnMount(node, apply) {
+    apply();
     afterFrames(1, () => {
-      if (ui && ui.body.contains(entry.node)) ui.body.scrollTop = top;
+      if (ui && node && ui.body.contains(node)) apply();
     });
+  }
+
+  // A scroll-owning view comes back to the offset it was left at.
+  function restoreScroll(entry) {
+    placeOnMount(entry.node, () => setBodyScroll(entry.scrollTop));
+  }
+
+  // A page-synced view has no saved offset: it is placed where the page
+  // currently sits. Instant — the content is appearing for the first time, so
+  // there is nothing to ease from.
+  function placeSyncedView(node) {
+    placeOnMount(node, () => syncNow({ animate: false }));
   }
 
   // Mount the named view.
@@ -465,14 +611,17 @@
     ensureRoot();
     saveViewScroll(views, ui.body.scrollTop);
     const { action, entry } = selectView(views, spec.name, spec.key, spec.cache);
+    const restores = viewRestoresScroll(spec.name);
     if (action === 'restore') {
       mountView(entry);
-      restoreScroll(entry);
+      if (restores) restoreScroll(entry);
+      else placeSyncedView(entry.node);
       return undefined;
     }
     entry.node = el('div', 'btx-view');
     mountView(entry);
-    ui.body.scrollTop = 0;
+    setBodyScroll(0);
+    // A page-synced view is placed once it has content — see showTranslation.
     // A slow render whose view was swapped out meanwhile writes into a detached
     // container — it can no longer paint over whatever replaced it, and it only
     // caches what it actually left behind (see settleView).
@@ -505,12 +654,18 @@
   // one writer — and a scroll aimed at a view that has since been swapped out
   // is dropped instead of moving whatever replaced it.
   //   frames  defer the measurement N animation frames, for layout to settle
+  //
+  // Instant, not eased: every caller reveals its target as part of opening the
+  // view (the talk reader's cited passage, the citations focus verse), so the
+  // target should already be on screen when the view first paints — easing
+  // there would mean watching the panel scroll through content the user never
+  // asked to see.
   function scrollIntoView(target, opts) {
     const o = opts || {};
     afterFrames(o.frames || 0, () => {
       if (!ui || !target || !ui.body.contains(target)) return;
       const delta = target.getBoundingClientRect().top - ui.body.getBoundingClientRect().top;
-      ui.body.scrollTop = Math.max(0, ui.body.scrollTop + delta - (o.offset || 0));
+      setBodyScroll(ui.body.scrollTop + delta - (o.offset || 0));
     });
   }
 
@@ -573,8 +728,10 @@
         host.appendChild(article);
         if (st.copyright) setFooter(st.copyright);
         keepView(views, true); // a loaded chapter is worth re-mounting
-        ui.body.scrollTop = 0;
-        refreshScrollSync();
+        // The chapter is only now measurable, so this is where the view gets
+        // placed against the page. (No refreshScrollSync: none of its three
+        // inputs moved — rendering content is not a state change.)
+        placeSyncedView(viewNode());
       }
     }
   }
@@ -614,15 +771,26 @@
   }
 
   // ---- Proportional scroll-sync with the main page ----
-  function syncNow() {
+  // In Translation mode the page is the source of truth for where the body
+  // sits. Nothing here writes scrollTop directly — it computes a target and
+  // hands it to setBodyScroll, which eases into it.
+  //   animate  false when this is placement (mounting a view, expanding the
+  //            panel): the body is appearing, not moving.
+  function syncNow(opts) {
     if (!ui || state.collapsed) return;
+    // Only the page-synced view may be moved by the page. Without this, a sync
+    // firing while Citations is still mounted (the mode toggle re-asserts the
+    // sync before the orchestrator swaps the view) would scroll the citation
+    // list — and poison the offset it saves on its way out.
+    if (viewRestoresScroll(views.active)) return;
     const doc = document.scrollingElement || document.documentElement;
     const denom = doc.scrollHeight - doc.clientHeight;
     if (denom <= 0) return;
     const fraction = Math.min(1, Math.max(0, doc.scrollTop / denom));
     const panelDenom = ui.body.scrollHeight - ui.body.clientHeight;
     if (panelDenom <= 0) return;
-    ui.body.scrollTop = fraction * panelDenom;
+    const animate = !opts || opts.animate !== false;
+    setBodyScroll(fraction * panelDenom, { animate });
   }
 
   function onPageScroll() {
@@ -634,18 +802,24 @@
   }
 
   // Scroll-sync only ever runs for a visible, expanded Translation view — the
-  // one invariant, asserted after every state change that could affect it.
+  // one invariant, asserted after every state change that could affect it
+  // (`visible`, `collapsed`, effective mode) and nowhere else.
   function refreshScrollSync() {
     const wanted = visible && !state.collapsed && effectiveMode(state) === 'translation';
     if (wanted && !scrollSyncOn) {
       scrollSyncOn = true;
       window.addEventListener('scroll', onPageScroll, { passive: true });
+      // Don't wait for the user's next scroll to agree with the page. This is a
+      // no-op unless the synced view is already mounted (expanding from
+      // collapsed); on a mode switch the view is placed when it mounts.
+      syncNow({ animate: false });
     } else if (!wanted && scrollSyncOn) {
       detachScrollSync();
     }
   }
 
   function detachScrollSync() {
+    stopBodyScroll(); // scroll-sync is the only thing that eases; it stops here
     if (!scrollSyncOn) return;
     scrollSyncOn = false;
     window.removeEventListener('scroll', onPageScroll);
