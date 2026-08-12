@@ -283,6 +283,23 @@ const optionsHtml = fs.readFileSync(path.join(ROOT, 'src/options/options.html'),
 check(!/id="sidebarWidth"[^>]*\b(min|max)=/.test(optionsHtml),
   'the options slider does not hardcode its range (set from the settings module)');
 
+// The options form edits the same settings the panel owns, so it must adopt
+// external changes instead of holding a copy that goes stale behind the panel.
+const optionsSrc = fs.readFileSync(path.join(ROOT, 'src/options/options.js'), 'utf8');
+check(/SETTINGS\.subscribe\(/.test(optionsSrc),
+  'the options page subscribes to settings changes (no stale form behind the panel)');
+
+// Which settings the panel handles by itself is the panel's own fact: the
+// orchestrator reads panel.HANDLED_KEYS rather than restating the list, so a
+// change can't end up rendered twice (or not at all) through drift.
+check(/HANDLED_KEYS: PANEL_HANDLED_KEYS/.test(panelSrc),
+  'panel.js exposes its handled-settings list as panel.HANDLED_KEYS');
+check(/PANEL_HANDLED_KEYS = \[[^\]]*'citationView'/.test(panelSrc),
+  'the citation layout is a panel-handled setting');
+const contentSrc = fs.readFileSync(path.join(ROOT, 'src/content/content.js'), 'utf8');
+check(/PANEL_KEYS = panel\.HANDLED_KEYS/.test(contentSrc),
+  'content.js takes the panel-handled key list from the panel (no second copy)');
+
 storageChecks().then(() => {
   if (failures) {
     console.error(`\n${failures} check(s) failed.`);
