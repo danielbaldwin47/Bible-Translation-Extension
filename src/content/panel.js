@@ -177,13 +177,10 @@
   }
 
   // ---- Pure scroll easing (Node-testable) ---------------------------------
-  // The body never jumps: every move eases toward its target. One frame of an
-  // exponential chase — the remaining distance decays with time constant `tau`,
-  // so the step is proportional to how far there is left to go. Small moves
-  // (following a page scroll frame by frame) resolve in about a frame and read
-  // as locked to the page; a mode switch worth thousands of pixels visibly
-  // eases. Retargeting mid-flight needs no special case: the next call just
-  // gets a new target.
+  // One frame of an exponential chase — the remaining distance decays with time
+  // constant `tau`, so the step is proportional to how far there is left to go.
+  // The one move that uses it is re-alignment, which can be worth thousands of
+  // pixels and so has to be carried rather than jumped.
   //
   // Normalizing on elapsed `dt` rather than counting frames is what keeps 60Hz
   // and 120Hz displays feeling the same.
@@ -218,18 +215,40 @@
     return x * x * (3 - 2 * x);
   }
 
+  // A floor under the step, in the direction of travel. The browser stores
+  // scrollTop in whole pixels and an exponential step is proportional to the
+  // distance left, so the last handful of pixels ask for moves under half a
+  // pixel: they round away to nothing and the body stops short. The stall exit
+  // in realignmentDone notices and finishes the move, but *finishing* it is a
+  // jump of a few pixels, and the rule here is that the body never jumps. So
+  // once the chase is slower than a pixel a frame, it walks the rest at a pixel
+  // a frame — about 80ms for the tail, too small to read as motion, but it
+  // arrives instead of being snapped there.
+  function floorStep(from, next, target, minPx) {
+    const f = Number(from) || 0;
+    const n = Number(next) || 0;
+    const distance = (Number(target) || 0) - f;
+    const min = minPx > 0 ? minPx : 0;
+    if (!min || distance === 0) return n;
+    const direction = distance > 0 ? 1 : -1;
+    if ((n - f) * direction >= min) return n; // already moving faster than the floor
+    return f + direction * Math.min(min, Math.abs(distance)); // never past the target
+  }
+
   // Re-alignment tuning. RAMP is how long the move takes to get going (so it
   // has a visible beginning instead of snapping to full speed); TAU is how fast
   // it settles once moving. Both live here, above the DOM shell, so the
   // validator can assert the *shipped* numbers rather than a copy of them.
   const SCROLL_TAU_MS = 165;
   const SCROLL_RAMP_MS = 130;
+  const SCROLL_MIN_STEP_PX = 1; // the smallest move the browser can actually store
   const SCROLL_LIMITS = {
-    // Arrival, in whole pixels. Generous on purpose: the last couple of pixels
-    // of an exponential are invisible, and chasing them keeps the panel in
-    // re-alignment (not tracking 1:1) for another half second after the motion
-    // has visibly finished. The browser rounds scrollTop anyway.
-    settlePx: 2,
+    // Arrival, in whole pixels — and it can be this tight only because
+    // floorStep guarantees at least a pixel of progress per frame, so the last
+    // stretch takes frames rather than the half second an exponential tail
+    // spends being invisible (during which the panel is still re-aligning
+    // instead of tracking 1:1).
+    settlePx: 1,
     // "Didn't move at all", not "moved a little": a step is proportional to the
     // distance left, so a larger value here would fire on the ordinary tail and
     // make every arrival a small jump. The rounding case this exists for
@@ -250,10 +269,12 @@
   // settles into a trail of roughly `tau x velocity` behind the page for as
   // long as the scrolling continues: the panel floats along after the page
   // instead of arriving, which reads as lag rather than as smoothness.
+  // The body may not have room for the whole delta (it is already at the top or
+  // the bottom), so the caller measures the shift it *actually* got out of the
+  // return value rather than assuming it landed.
   function carryScroll(from, prevTarget, nextTarget, max) {
     const shifted = (Number(from) || 0) + ((Number(nextTarget) || 0) - (Number(prevTarget) || 0));
-    const top = max === undefined ? shifted : Math.min(Number(max) || 0, shifted);
-    return Math.max(0, top);
+    return Math.max(0, Math.min(Number(max) || 0, shifted));
   }
 
   // Is the re-alignment over? Three ways to be done, and two of them exist
@@ -300,8 +321,8 @@
     module.exports = {
       createState, effectiveMode, selectMode, selectCitationView, setBible,
       createViews, saveViewScroll, selectView, keepView, settleView, dropViews,
-      viewRestoresScroll, scrollStep, easeRamp, carryScroll, realignmentDone, isForeignScroll,
-      SCROLL_TAU_MS, SCROLL_RAMP_MS, SCROLL_LIMITS,
+      viewRestoresScroll, scrollStep, easeRamp, floorStep, carryScroll, realignmentDone, isForeignScroll,
+      SCROLL_TAU_MS, SCROLL_RAMP_MS, SCROLL_MIN_STEP_PX, SCROLL_LIMITS,
     };
   }
   if (typeof document === 'undefined') return; // Node: pure core only
@@ -625,6 +646,11 @@
     return Math.max(0, ui.body.scrollHeight - ui.body.clientHeight);
   }
 
+  // The one place the body's scrollable range is applied.
+  function clampToBody(px) {
+    return Math.max(0, Math.min(maxBodyScroll(), Number(px) || 0));
+  }
+
   function stopBodyScroll() {
     if (!bodyAnim) return;
     cancelAnimationFrame(bodyAnim.raf);
@@ -642,8 +668,11 @@
     // we're chasing (a render finishing, a filter hiding rows), a target past
     // the new bottom is one the browser will never let us reach — and the
     // settle test would never pass, leaving the rAF loop running forever.
-    const target = Math.min(bodyAnim.target, maxBodyScroll());
-    bodyAnim.target = target;
+    // Clamp for *this frame* only: `bodyAnim.target` stays the position the page
+    // asked for, so the next carry can still subtract two figures in the same
+    // coordinates. Writing the clamp back would make that difference something
+    // other than how far the page moved, and the carry would apply it.
+    const target = clampToBody(bodyAnim.target);
     if (!bodyAnim.started) bodyAnim.started = ts;
     // How far the body actually travelled last frame — not how far we asked it
     // to. The difference is the whole point: see realignmentDone.
@@ -662,7 +691,8 @@
     bodyAnim.last = ts;
     bodyAnim.wasAt = from;
     const ramp = easeRamp(ts - bodyAnim.started, SCROLL_RAMP_MS);
-    writeBodyScroll(scrollStep(from, target, dt, SCROLL_TAU_MS, ramp));
+    const eased = scrollStep(from, target, dt, SCROLL_TAU_MS, ramp);
+    writeBodyScroll(floorStep(from, eased, target, SCROLL_MIN_STEP_PX));
     bodyAnim.raf = requestAnimationFrame(stepBodyScroll);
   }
 
@@ -670,7 +700,7 @@
   //            re-alignment sets it; nothing else in the panel animates.
   function setBodyScroll(top, opts) {
     if (!ui) return;
-    const target = Math.min(maxBodyScroll(), Math.max(0, Number(top) || 0));
+    const target = clampToBody(top);
     if (!(opts && opts.animate)) {
       stopBodyScroll();
       writeBodyScroll(target);
@@ -683,10 +713,16 @@
     // the scrolling lasts.
     if (bodyAnim) {
       if (target !== bodyAnim.target) {
-        writeBodyScroll(carryScroll(ui.body.scrollTop, bodyAnim.target, target, maxBodyScroll()));
-        // That move was the page's, not the chase's; counting it as a frame of
-        // travel would hide a stall on the next one.
-        bodyAnim.wasAt = null;
+        const at = ui.body.scrollTop;
+        const to = carryScroll(at, bodyAnim.target, target, maxBodyScroll());
+        writeBodyScroll(to);
+        // Move the mark the stall test measures from by however much of the
+        // carry the body actually took (it may have been at the top or bottom),
+        // so `moved` next frame is still the chase's own travel and nothing
+        // else. Dropping the mark instead would blind the stall test for the
+        // whole gesture — a page scroll carries on nearly every frame — and the
+        // sub-pixel stranding it exists to catch would be back.
+        if (bodyAnim.wasAt !== null) bodyAnim.wasAt += to - at;
         bodyAnim.target = target;
       }
       return;
