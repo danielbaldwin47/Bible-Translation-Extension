@@ -4,10 +4,47 @@
  * reading content and copy them into the panel as CSS variables. This makes the
  * panel track light/dark/sepia and the font-size slider automatically.
  *
- * IIFE -> __BTX.theme.
+ * Interface:
+ *   mirror(resolveTarget) -> { refresh() }
+ *       Style the target element like the site and keep it that way: the initial
+ *       apply, the launch-time re-apply until the site's toolbar height resolves,
+ *       and the theme/font/resize watching afterwards. `resolveTarget()` is asked
+ *       on every apply and may return null when there is nothing mounted to style.
+ *       `refresh()` re-applies now and restarts the alignment chain — call it when
+ *       a target appears; the policy below decides whether more applies follow.
+ *       A mirror lives as long as the content script does; there is no teardown.
+ *   resolveReadingContainer() -> element   structural hook, ADR-0005
+ *
+ * Capturing, applying, observing and the retry policy are all internal: callers
+ * say "keep this element looking like the site", not how to get there.
+ *
+ * IIFE -> __BTX.theme (ADR-0002). The pure retry policy below is also exported
+ * for Node (tools/validate-theme-align.js); the DOM half is skipped there.
  */
 (function (root) {
   'use strict';
+
+  // ---- Pure retry policy (Node-testable) ---------------------------------
+  // The site's sticky toolbar may not be laid out when we first apply, so its
+  // height reads as unknown and the two header bars misalign until something
+  // (a resize) re-captures it. So we re-apply on a short backoff at launch —
+  // this is the whole policy: after the apply for `attempt`, how long until the
+  // next one, and when to give up (null). It must terminate: on a page where no
+  // plausible toolbar exists the height never resolves.
+  const ALIGN_ATTEMPTS = 8;
+  const ALIGN_MAX_DELAY = 500;
+
+  function nextAlignDelay(attempt, aligned) {
+    if (aligned || attempt >= ALIGN_ATTEMPTS) return null;
+    return attempt === 0 ? 0 : Math.min(ALIGN_MAX_DELAY, 50 * 2 ** (attempt - 1));
+  }
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { ALIGN_ATTEMPTS, ALIGN_MAX_DELAY, nextAlignDelay };
+  }
+  if (typeof document === 'undefined') return; // Node: pure policy only
+
+  // ---- DOM half ------------------------------------------------------------
 
   // Find the element that holds the scripture text, using stable-ish hooks with
   // graceful fallbacks. Used to mirror font-size/family/line-height.
@@ -43,13 +80,6 @@
     }
     if (best) headerHeightPx = Math.round(best);
     return headerHeightPx; // null until a plausible bar is found
-  }
-
-  // True once captureHeaderHeight() has measured the site's toolbar. The first
-  // theme apply at launch can run before the SPA toolbar is laid out (height
-  // unknown), so the caller re-applies until this flips true.
-  function headerHeightKnown() {
-    return headerHeightPx != null;
   }
 
   // Walk up from el to find the first non-transparent background color.
@@ -124,7 +154,8 @@
     targetEl.setAttribute('data-btx-theme', v.dark ? 'dark' : 'light');
   }
 
-  // Observe site theme/font changes; debounced. Returns a disconnect function.
+  // Watch for site theme/font changes; debounced. Lives for the life of the page
+  // (the content script has no teardown), so there is nothing to disconnect.
   function observe(onChange) {
     let timer = null;
     const schedule = () => {
@@ -138,14 +169,57 @@
       mo.observe(document.body, { attributes: true, attributeFilter: attrFilter });
     }
     window.addEventListener('resize', schedule);
-    return () => {
-      mo.disconnect();
-      window.removeEventListener('resize', schedule);
-      clearTimeout(timer);
-    };
+  }
+
+  // Keep resolveTarget()'s element looking like the site, for as long as it
+  // lives: apply now, run the launch-alignment chain while the site toolbar
+  // height is still unknown, and re-apply on every theme/font/resize change.
+  function mirror(resolveTarget) {
+    let alignTimer = null;
+    let alignFrame = null;
+
+    // Apply the site's look to whatever is mounted; false = nothing to style.
+    function applyNow() {
+      const el = resolveTarget();
+      if (!el) return false;
+      apply(el, capture());
+      return true;
+    }
+
+    function cancelAlign() {
+      clearTimeout(alignTimer);
+      if (alignFrame != null) cancelAnimationFrame(alignFrame);
+      alignTimer = null;
+      alignFrame = null;
+    }
+
+    // One apply, then schedule the next per the retry policy. Applying inside a
+    // frame keeps each measurement after the site has had a chance to lay out.
+    function alignTick(attempt) {
+      alignTimer = null;
+      alignFrame = null;
+      // Nothing mounted: no apply happened, so the toolbar height can't resolve
+      // and retrying is pointless. refresh() restarts the chain once there is a
+      // target to align.
+      if (!applyNow()) return;
+      const delay = nextAlignDelay(attempt, headerHeightPx != null);
+      if (delay == null) return;
+      alignTimer = setTimeout(() => {
+        alignFrame = requestAnimationFrame(() => alignTick(attempt + 1));
+      }, delay);
+    }
+
+    function refresh() {
+      cancelAlign(); // one chain at a time — a fresh refresh restarts the backoff
+      alignTick(0);
+    }
+
+    observe(applyNow);
+    refresh();
+    return { refresh };
   }
 
   root.__BTX = Object.assign(root.__BTX || {}, {
-    theme: { resolveReadingContainer, capture, apply, observe, luminance, headerHeightKnown },
+    theme: { resolveReadingContainer, mirror },
   });
 })(typeof globalThis !== 'undefined' ? globalThis : this);

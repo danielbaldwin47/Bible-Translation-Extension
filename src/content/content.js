@@ -2,7 +2,7 @@
  * Orchestrator (content-script entry). Detection, worker messaging, and data
  * fetching — the panel owns its own state (mode, layout, collapsed, width):
  *  - watches SPA navigation and renders the matching chapter's content
- *  - mirrors the site theme/font into the panel and keeps it in sync
+ *  - points the theme module at the panel root (it owns keeping it in sync)
  *  - manages translation selection and the loading/error/no-key states
  *  - answers the panel's renderMode event with fresh mode content
  *
@@ -37,7 +37,7 @@
   let reqToken = 0; // guards against stale responses
   let retryTimer = null;
   let userClosed = false;
-  let themeDisconnect = null;
+  let themeMirror = null; // theme.mirror handle — the theme module keeps the panel in sync
   let currentKey = null; // dedupes repeat navigation events for the same chapter
   let mounted = null; // which mode's content is in the panel body right now
   let scrollToSnippet = true; // open sources scrolled to the cited paragraph
@@ -73,21 +73,6 @@
 
   function findTranslation(id) {
     return enabled && enabled.translations.find((t) => t.id === id);
-  }
-
-  function applyTheme() {
-    theme.apply(panel.getRootEl(), theme.capture());
-  }
-
-  // The panel header matches the site's sticky toolbar height (--btx-header-h),
-  // but that toolbar may not be laid out when we first render, so the height
-  // reads as unknown and the bars misalign until something (a resize) re-captures
-  // it. Re-apply on a short backoff until it resolves — proactively, at launch.
-  function applyThemeUntilAligned(attempt) {
-    applyTheme();
-    if (theme.headerHeightKnown() || attempt >= 8) return;
-    const delay = attempt === 0 ? 0 : Math.min(500, 50 * 2 ** (attempt - 1));
-    setTimeout(() => requestAnimationFrame(() => applyThemeUntilAligned(attempt + 1)), delay);
   }
 
   async function loadEnabled(force) {
@@ -135,7 +120,7 @@
     }
 
     panel.showChapter({ title: refLabel(parsed), isBible: parsed.isBible !== false });
-    applyThemeUntilAligned(0);
+    if (themeMirror) themeMirror.refresh(); // the panel is on screen: theme it now
 
     await renderActiveMode();
   }
@@ -339,11 +324,11 @@
 
     scrollToSnippet = (await SETTINGS.get()).scrollToSnippet;
 
-    detect.setupNavigation(() => render());
+    // Hand the theme module the panel root (null while there's nothing shown);
+    // it owns applying, aligning and re-applying from here on.
+    themeMirror = theme.mirror(() => (current && !userClosed ? panel.getRootEl() : null));
 
-    themeDisconnect = theme.observe(() => {
-      if (current && !userClosed) applyTheme();
-    });
+    detect.setupNavigation(() => render());
 
     // Settings changed (options page, or another tab) -> adopt what's ours, and
     // re-render only when it wasn't our own write and something the panel
