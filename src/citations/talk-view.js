@@ -146,9 +146,9 @@
     titleEl.title = source.ti || '';
     meta.appendChild(titleEl);
     // Keep the study context visible: which verse(s) this source cites.
-    const citPanel = root.__BTX.citPanel;
-    const verses = entry.versesInChapter && entry.versesInChapter.length && citPanel
-      ? 'cites ' + citPanel.verseLabel(entry.versesInChapter) : '';
+    const citVM = root.__BTX.citVM;
+    const verses = entry.versesInChapter && entry.versesInChapter.length && citVM
+      ? 'cites ' + citVM.verseLabel(entry.versesInChapter) : '';
     const subText = [source.sp, source.lbl, verses].filter(Boolean).join(' · ');
     const subEl = el('div', 'btx-talk-sub', subText);
     subEl.title = subText; // header lines are single-line ellipsized
