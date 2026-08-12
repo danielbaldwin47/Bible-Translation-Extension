@@ -157,6 +157,10 @@
     els.citationView.value = settings.citationView;
     els.showCitationToggle.checked = settings.showCitationToggle;
 
+    // Slider range comes from the settings module, so the three places that
+    // used to hardcode 280/900 can't drift apart.
+    els.sidebarWidth.min = String(SETTINGS.SIDEBAR_WIDTH_MIN);
+    els.sidebarWidth.max = String(SETTINGS.SIDEBAR_WIDTH_MAX);
     const w = settings.sidebarWidth;
     els.sidebarWidth.value = String(w);
     els.sidebarWidthOut.textContent = w + 'px';

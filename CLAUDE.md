@@ -150,9 +150,14 @@ source-data/               GITIGNORED build input: the BYU DBs
   keys that actually moved) and `own` (this context made the write), which is
   how `content.js` skips a re-render for a width-only change or for its own
   citation-layout write.
-- Panel width persists in `settings.sidebarWidth` (sync), clamped 280–900 by
-  the settings normalizer, the panel's `clampWidth`, and the options slider —
-  keep the three in step.
+- Panel width persists in `settings.sidebarWidth` (sync). The 280–900 bounds
+  live only in `__BTX.settings` (`SIDEBAR_WIDTH_MIN/MAX`); `panel.clampWidth`
+  and the options slider read them from there (`clampWidth` adds its own 90%
+  viewport cap).
+- Every settings write is stamped with a `__btxWrite` tag (how `own` is
+  detected) and carries through any key the schema doesn't know, so a newer
+  version's setting on another synced machine isn't deleted. Neither is a
+  setting, so neither shows up in `diff`.
 - SPA navigation is debounced via `currentKey` in `content.js`; mode toggles
   re-render directly (bypassing that dedupe). Reset `currentKey = null` to
   force a re-render.

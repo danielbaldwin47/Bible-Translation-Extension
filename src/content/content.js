@@ -310,17 +310,15 @@
   // Adopt the settings that affect the panel. Called at startup and on every
   // change; the module hands us already-normalized values.
   function applySettings(s, changed) {
+    scrollToSnippet = s.scrollToSnippet;
+    citationView = s.citationView;
+    showCitationToggle = s.showCitationToggle;
+    // Touch the panel only for the settings that actually moved (`changed` is
+    // null at startup, when everything counts as new).
     const touched = (key) => !changed || changed.includes(key);
     if (touched('sidebarWidth')) panel.setWidth(s.sidebarWidth);
-    scrollToSnippet = s.scrollToSnippet;
-    if (touched('citationView')) {
-      citationView = s.citationView;
-      panel.setCitationView(citationView);
-    }
-    if (touched('showCitationToggle')) {
-      showCitationToggle = s.showCitationToggle;
-      panel.setCitationToggleEnabled(showCitationToggle);
-    }
+    if (touched('citationView')) panel.setCitationView(citationView);
+    if (touched('showCitationToggle')) panel.setCitationToggleEnabled(showCitationToggle);
   }
 
   // ---- Wire up ----

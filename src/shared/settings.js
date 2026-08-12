@@ -24,8 +24,8 @@
   const C = (root.__BTX && root.__BTX.const)
     || (typeof require === 'function' ? require('./constants.js') : null);
 
-  // Panel width bounds. Must match `clampWidth` in src/content/panel.js and the
-  // range input in src/options/options.html.
+  // Panel width bounds — the one source of truth. `clampWidth` in
+  // src/content/panel.js and the options slider both read these.
   const SIDEBAR_WIDTH_MIN = 280;
   const SIDEBAR_WIDTH_MAX = 900;
   const SIDEBAR_WIDTH_DEFAULT = 380;
@@ -68,8 +68,10 @@
     return v.filter((t) => t && typeof t === 'object' && typeof t.id === 'string' && t.id !== '');
   }
 
-  const APIBIBLE = C ? C.PROVIDER_APIBIBLE : 'api.bible';
-  const BIBLEAPI = C ? C.PROVIDER_BIBLEAPI : 'bible-api.com';
+  // Loaded after constants.js in every context (manifest content_scripts,
+  // importScripts, options.html), so a missing `C` is a load-order bug.
+  const APIBIBLE = C.PROVIDER_APIBIBLE;
+  const BIBLEAPI = C.PROVIDER_BIBLEAPI;
 
   // ---- Schema -------------------------------------------------------------
   // One entry per setting: its default and its single normalizer.
@@ -124,8 +126,15 @@
   // Everything below needs `chrome.storage`; in Node only the pure parts above
   // are exercised.
 
-  const KEY = C ? C.SETTINGS_KEY : 'btxSettings';
+  const KEY = C.SETTINGS_KEY;
   const AREA = 'sync';
+
+  // Stamped onto every write so a change event can be matched back to the
+  // context that caused it. Not a setting: it is stripped on read and ignored
+  // by `diff`, so it never looks like a change.
+  const WRITE_TAG = '__btxWrite';
+  const CONTEXT_ID = Math.random().toString(36).slice(2, 10);
+  let writeSeq = 0;
 
   let cache = null; // last known normalized settings for this context
   // The value subscribers were last told about. Tracked separately from
@@ -133,13 +142,18 @@
   // after a write is correct) while the change event only arrives later — and
   // that event's "what changed" has to be measured against what subscribers
   // last saw, not against the value we just optimistically cached.
-  let notified = null;
+  let lastNotified = null;
   const listeners = new Set();
-  // Values this context has written but not yet seen echoed back through
+  // Write tags this context has issued but not yet seen echoed back through
   // storage.onChanged, so a subscriber can tell its own write from someone
   // else's. Bounded: a write whose echo never arrives must not leak.
   const pendingOwnWrites = [];
   const MAX_PENDING = 8;
+  // Keys in the stored object that aren't ours — a setting written by a newer
+  // (or older) version of the extension on another synced machine. We don't
+  // understand them, so we carry them through our writes untouched rather than
+  // deleting someone else's data.
+  let extras = {};
   let wired = false;
 
   function hasStorage() {
@@ -159,22 +173,38 @@
     });
   }
 
+  // Resolves true on success. A failed write (sync quota, most likely) must not
+  // leave this context believing it stored something it didn't.
   function writeRaw(value) {
     return new Promise((resolve) => {
       try {
         chrome.storage[AREA].set({ [KEY]: value }, () => {
-          if (chrome.runtime) void chrome.runtime.lastError; // swallow
-          resolve();
+          resolve(!(chrome.runtime && chrome.runtime.lastError));
         });
       } catch (e) {
-        resolve();
+        resolve(false);
       }
     });
   }
 
-  // True (and consumes the record) if `next` is the echo of a write we made.
-  function claimOwnWrite(next) {
-    const i = pendingOwnWrites.findIndex((w) => diff(w, next).length === 0);
+  // Remember any key in the stored object that isn't ours, so our next write
+  // carries it through instead of dropping it.
+  function rememberExtras(raw) {
+    if (!raw || typeof raw !== 'object') return;
+    const out = {};
+    for (const k of Object.keys(raw)) {
+      if (k !== WRITE_TAG && !Object.prototype.hasOwnProperty.call(SCHEMA, k)) out[k] = raw[k];
+    }
+    extras = out;
+  }
+
+  // True (and consumes the record) if this change event is the echo of a write
+  // we made. Matched on the write tag we stamped, not on the value — two
+  // contexts writing the same value are then still told apart.
+  function claimOwnWrite(raw) {
+    const tag = raw && typeof raw === 'object' ? raw[WRITE_TAG] : undefined;
+    if (!tag) return false;
+    const i = pendingOwnWrites.indexOf(tag);
     if (i === -1) return false;
     pendingOwnWrites.splice(i, 1);
     return true;
@@ -185,35 +215,59 @@
     wired = true;
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== AREA || !changes[KEY]) return;
-      const next = normalize(changes[KEY].newValue);
-      const prev = notified || normalize(changes[KEY].oldValue);
+      const raw = changes[KEY].newValue;
+      const next = normalize(raw);
+      const prev = lastNotified || normalize(changes[KEY].oldValue);
+      rememberExtras(raw);
       cache = next;
-      notified = next;
+      lastNotified = next;
+      // Consume the echo record even when nothing changed, so a stale record
+      // can't be claimed by a later, unrelated change.
+      const own = claimOwnWrite(raw);
       const changed = diff(prev, next);
-      const own = claimOwnWrite(next);
       if (!changed.length) return; // a re-save of identical values is not a change
       for (const fn of Array.from(listeners)) {
-        try { fn({ next, prev, changed, own }); } catch (e) { /* one bad listener shouldn't stop the rest */ }
+        try { fn({ next: normalize(next), prev, changed, own }); } catch (e) { /* one bad listener shouldn't stop the rest */ }
       }
     });
   }
 
   // Current settings, normalized. Cached per context and kept fresh by the
-  // onChanged listener, so callers can call this freely.
+  // onChanged listener, so callers can call this freely. Returns a fresh object
+  // each time — the cache is this module's, not the caller's.
   async function get() {
-    if (cache) return cache;
     wire();
-    cache = hasStorage() ? normalize(await readRaw()) : defaults();
-    if (!notified) notified = cache;
-    return cache;
+    if (cache) return normalize(cache);
+    if (hasStorage()) {
+      const raw = await readRaw();
+      rememberExtras(raw);
+      cache = normalize(raw);
+    } else {
+      cache = defaults();
+    }
+    if (!lastNotified) lastNotified = cache;
+    return normalize(cache);
   }
 
   async function write(next) {
     wire();
+    const before = cache;
     cache = next;
-    pendingOwnWrites.push(next);
+    if (!hasStorage()) return next;
+    const tag = `${CONTEXT_ID}:${++writeSeq}`;
+    pendingOwnWrites.push(tag);
     while (pendingOwnWrites.length > MAX_PENDING) pendingOwnWrites.shift();
-    if (hasStorage()) await writeRaw(next);
+    // Unknown keys ride along untouched; the tag rides along so we recognize
+    // the echo. Neither is a setting, so neither can register as a change.
+    const ok = await writeRaw(Object.assign({}, extras, next, { [WRITE_TAG]: tag }));
+    if (!ok) {
+      // The write never landed: drop the optimistic cache and the echo record
+      // rather than let later read-modify-writes build on a phantom value.
+      cache = before;
+      const i = pendingOwnWrites.indexOf(tag);
+      if (i !== -1) pendingOwnWrites.splice(i, 1);
+      return before || defaults();
+    }
     return next;
   }
 

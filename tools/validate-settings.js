@@ -131,6 +131,7 @@ async function storageChecks() {
   console.log('Storage (get/patch/replace/subscribe):');
 
   let store = {};
+  let failWrites = false;
   const changeListeners = [];
   global.chrome = {
     runtime: { lastError: null },
@@ -138,6 +139,12 @@ async function storageChecks() {
       sync: {
         get(key, cb) { cb({ [key]: store[key] }); },
         set(obj, cb) {
+          if (failWrites) { // e.g. sync quota exceeded
+            chrome.runtime.lastError = { message: 'QUOTA_BYTES quota exceeded' };
+            if (cb) cb();
+            chrome.runtime.lastError = null;
+            return;
+          }
           const key = Object.keys(obj)[0];
           const oldValue = store[key];
           store[key] = obj[key];
@@ -148,6 +155,7 @@ async function storageChecks() {
       onChanged: { addListener(fn) { changeListeners.push(fn); } },
     },
   };
+  const lastEvent = () => events[events.length - 1];
 
   const events = [];
   S.subscribe((e) => events.push(e));
@@ -187,6 +195,37 @@ async function storageChecks() {
   check(events.length === before + 2, 'each own write notifies once');
   check(events.slice(before).every((e) => e.own === true), 'both queued own writes stay flagged own');
 
+  // Own writes are matched on a write tag, not on the value — so another
+  // context writing exactly what we would have written is still not "own".
+  chrome.storage.sync.set({ btxSettings: Object.assign(S.defaults(), { sidebarWidth: 640 }) });
+  check(lastEvent().own === false, 'an external write of a value we could have made is not claimed as own');
+
+  // A key we don't know (a setting from another version of the extension on
+  // another synced machine) must survive our writes, not be deleted by them.
+  chrome.storage.sync.set({ btxSettings: Object.assign(S.defaults(), { futureSetting: 'keep me' }) });
+  await S.patch({ sidebarWidth: 300 });
+  eq(store.btxSettings.futureSetting, 'keep me', 'an unknown key survives one of our writes');
+  eq((await S.get()).sidebarWidth, 300, 'our own field still went through');
+  check(!('futureSetting' in (await S.get())), 'an unknown key is still not exposed as a setting');
+
+  // A write that never lands must not leave the cache believing it did.
+  const kept = (await S.get()).sidebarWidth;
+  const eventsBeforeFailure = events.length;
+  failWrites = true;
+  await S.patch({ sidebarWidth: 700 });
+  failWrites = false;
+  eq((await S.get()).sidebarWidth, kept, 'a failed write does not poison the cache');
+  eq(store.btxSettings.sidebarWidth, kept, 'a failed write does not reach storage');
+  check(events.length === eventsBeforeFailure, 'a failed write notifies nobody');
+  // ...and its echo record must not be claimable by a later, unrelated write.
+  chrome.storage.sync.set({ btxSettings: Object.assign(S.defaults(), { sidebarWidth: 700 }) });
+  check(lastEvent().own === false, 'the record for a failed write cannot be claimed later');
+
+  // The cache belongs to the module, not the caller.
+  const handedOut = await S.get();
+  handedOut.sidebarWidth = 12345;
+  eq((await S.get()).sidebarWidth, 700, 'get() hands out a copy, not the live cache');
+
   delete global.chrome;
 }
 
@@ -210,6 +249,14 @@ for (const file of walk(path.join(ROOT, 'src'), [])) {
   check(!/SETTINGS_KEY/.test(src), `${rel} must not reference SETTINGS_KEY directly`);
   check(!/suppressNextViewRender|sameExceptWidth/.test(src), `${rel} still has an own-write/diff workaround`);
 }
+
+// The width bounds live in the settings module only.
+const panelSrc = fs.readFileSync(path.join(ROOT, 'src/content/panel.js'), 'utf8');
+check(/SIDEBAR_WIDTH_MIN/.test(panelSrc) && /SIDEBAR_WIDTH_MAX/.test(panelSrc),
+  'panel.js clampWidth reads the bounds from the settings module');
+const optionsHtml = fs.readFileSync(path.join(ROOT, 'src/options/options.html'), 'utf8');
+check(!/id="sidebarWidth"[^>]*\b(min|max)=/.test(optionsHtml),
+  'the options slider does not hardcode its range (set from the settings module)');
 
 storageChecks().then(() => {
   if (failures) {
