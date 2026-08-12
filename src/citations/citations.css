@@ -1,7 +1,44 @@
 /*
  * Citation-index styles. Panel-scoped rules live under #btx-root and reuse the
- * theme variables set by panel.css/theme.js.
+ * theme variables set by panel.css/theme.js — with one exception, the chip
+ * family below, whose geometry is citation-local and declared here.
  */
+
+/* ---- Chip family ----
+ * The three small right-side chips (count, verse-range badge, corpus tag) get
+ * their geometry from these values, so they read as one family and adjusting
+ * the family is one edit rather than three. They must size themselves: the
+ * panel body inherits the site's line-height, and Chrome resolves that to an
+ * absolute px (~27px at the default 17px/1.6), which then inherits verbatim
+ * into every descendant regardless of its own font size — an 11px chip in a
+ * 27px line box is the tall rectangle these values exist to prevent. The
+ * mirrored line-height stays correct for body text; only the chips opt out.
+ *
+ * The sizes are fixed rather than scaled off --btx-size on purpose: the chips
+ * are panel chrome, not body text, and a count that grew with the reader's
+ * font setting would crowd the verse label it sits beside.
+ */
+#btx-root {
+  --btx-chip-h: 20px;
+  --btx-chip-pad: 6px;
+  --btx-chip-pad-tight: 2px;    /* the count chip: min-width sets its width, so it needs only clearance */
+  --btx-chip-radius: 6px;
+  --btx-chip-font-size: 11px;
+}
+#btx-root .btx-cit-count,
+#btx-root .btx-cit-range,
+#btx-root .btx-cit-tag {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--btx-chip-h);
+  line-height: 1;
+  padding: 0 var(--btx-chip-pad);
+  border-radius: var(--btx-chip-radius);
+  font-size: var(--btx-chip-font-size);
+  white-space: nowrap;
+}
 
 /* ---- Mode toggle (segmented control: joined halves, filled active segment) ---- */
 #btx-root .btx-modes {
@@ -153,20 +190,17 @@
 #btx-root details[open] > summary > .btx-caret { transform: rotate(90deg); }
 
 #btx-root .btx-cit-label { flex: 1 1 auto; }
-/* Count chip (verse + source-type): subtle bordered box. min-width is past the
-   2-digit total, so 1- and 2-digit boxes match (3-digit grows); centered. */
+/* Count chip (verse + source-type): subtle bordered box, geometry from the chip
+   family above. min-width matches the family height, so 1 and 2 digits both
+   render as the same square box (the tight padding is what keeps two digits
+   inside it); a 3-digit count outgrows the min-width and grows in width only. */
 #btx-root .btx-cit-count {
-  flex: 0 0 auto;
-  box-sizing: border-box;
-  min-width: 22px;
-  font-size: 11px;
+  min-width: var(--btx-chip-h);
+  padding: 0 var(--btx-chip-pad-tight);
   font-weight: 600;
   color: var(--btx-muted);
   background: transparent;
   border: 1px solid var(--btx-border);
-  border-radius: 6px;
-  text-align: center;
-  padding: 0 2px;
 }
 /* Source-type chips get a faint tint matching their tag color as a glance cue. */
 #btx-root .btx-cit-count.btx-grp-gc {
@@ -217,23 +251,14 @@
 }
 /* Verse/range label on a spanning (or source-view) entry, e.g. "vv. 3–10". */
 #btx-root .btx-cit-range {
-  flex: 0 0 auto;
-  font-size: 10.5px;
   font-weight: 600;
   color: var(--btx-muted);
   border: 1px solid var(--btx-border);
-  border-radius: 6px;
-  padding: 0 5px;
-  white-space: nowrap;
 }
 #btx-root .btx-cit-tag {
-  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.03em;
-  padding: 1px 6px;
-  border-radius: 10px;
   color: #fff;
-  flex: 0 0 auto;
 }
 #btx-root .btx-tag-G, #btx-root .btx-tag-E { background: #006184; }
 #btx-root .btx-tag-J { background: #7a5230; }
