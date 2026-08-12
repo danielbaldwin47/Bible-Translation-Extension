@@ -1,11 +1,14 @@
 /*
- * Orchestrator (content-script entry). Wires detection -> worker -> panel:
- *  - watches SPA navigation and re-renders the matching chapter
+ * Orchestrator (content-script entry). Detection, worker messaging, and data
+ * fetching — the panel owns its own state (mode, layout, collapsed, width):
+ *  - watches SPA navigation and renders the matching chapter's content
  *  - mirrors the site theme/font into the panel and keeps it in sync
- *  - manages translation selection, loading/error/no-key states, scroll-sync
+ *  - manages translation selection and the loading/error/no-key states
+ *  - answers the panel's renderMode event with fresh mode content
  *
- * Runs once per page. Shared modules (constants/books) and the other content
- * modules are loaded before this file via the manifest content_scripts order.
+ * Runs once per page. Shared modules (constants/settings/books) and the other
+ * content modules are loaded before this file via the manifest content_scripts
+ * order.
  */
 (function (root) {
   'use strict';
@@ -20,8 +23,11 @@
   const talkView = root.__BTX.talkView;
 
   const SELECTION_KEY = 'btxSelectedTranslation';
-  const MODE_KEY = 'btxPanelMode';
-  const COLLAPSED_KEY = 'btxPanelCollapsed';
+
+  // Settings the panel owns end-to-end. A change touching only these never
+  // needs the orchestrator's full re-render — the panel adopts it itself (and
+  // fires renderMode when it made the mounted content stale).
+  const PANEL_KEYS = ['sidebarWidth', 'citationView', 'showCitationToggle', 'panelMode', 'panelCollapsed'];
 
   let enabled = null; // { translations, defaultId, provider, hasKey }
   let selectedId = null;
@@ -31,25 +37,16 @@
   let userClosed = false;
   let themeDisconnect = null;
   let currentKey = null; // dedupes repeat navigation events for the same chapter
-  let mode = 'translation'; // user's preferred mode on Bible chapters
-  let isBibleCurrent = true; // current page has translations (OT/NT)?
+  let mounted = null; // which mode's content is in the panel body right now
   let scrollToSnippet = true; // open sources scrolled to the cited paragraph
-  let citationView = 'source'; // citations layout: 'source' | 'verse'
-  let showCitationToggle = true; // show the layout sub-toggle in the sidebar
   let citCache = null; // { key, node, scrollTop } — preserves the citations view
   let transCache = null; // { key, node, footer, scrollTop } — preserves translation view
-
-  // On non-Bible books there's no translation, so Citations is forced.
-  function effectiveMode() {
-    return isBibleCurrent ? mode : 'citations';
-  }
 
   function getStored(key) {
     return new Promise((resolve) => {
       try { chrome.storage.local.get(key, (d) => resolve(d && d[key])); } catch (e) { resolve(undefined); }
     });
   }
-  function storeMode() { try { chrome.storage.local.set({ [MODE_KEY]: mode }); } catch (e) { /* ignore */ } }
 
   function send(message) {
     return new Promise((resolve) => {
@@ -107,24 +104,23 @@
     current = parsed;
 
     if (!parsed) {
-      panel.setVisible(false);
+      panel.hide();
       currentKey = null;
       return;
     }
-    isBibleCurrent = parsed.isBible !== false;
 
     // Skip spurious events (e.g. verse-anchor hashchange) for the same chapter.
-    // Mode toggles re-render directly (see renderActiveMode), bypassing this.
+    // Panel-initiated changes arrive via renderMode instead, bypassing this.
     const key = `${parsed.collection}/${parsed.ldsBook}/${parsed.chapter}/${parsed.lang}`;
     if (key === currentKey) return;
     currentKey = key;
     citCache = null; // new chapter -> discard the cached views
     transCache = null;
+    mounted = null;
     clearTimeout(retryTimer);
 
-    panel.ensureRoot();
     if (userClosed) {
-      panel.setVisible(false);
+      panel.hide();
       return;
     }
 
@@ -132,32 +128,38 @@
 
     // Respect the "English pages only" preference.
     if (e.actOnNonEngOnly !== false && parsed.lang !== 'eng') {
-      panel.setVisible(false);
+      panel.hide();
       return;
     }
 
-    panel.setVisible(true);
+    panel.showChapter({ title: refLabel(parsed), isBible: parsed.isBible !== false });
     applyThemeUntilAligned(0);
-    panel.setTitle(refLabel(parsed));
-    panel.setBibleMode(isBibleCurrent);
-    panel.setMode(effectiveMode());
-    panel.setCitationView(citationView);
 
     await renderActiveMode();
   }
 
   function renderActiveMode() {
     if (!current) return undefined;
-    return effectiveMode() === 'citations' ? renderCitations(current) : renderTranslation();
+    return panel.effectiveMode() === 'citations' ? renderCitations(current) : renderTranslation();
+  }
+
+  // The panel switched its mode or citation layout and needs fresh content:
+  // remember where the outgoing view was scrolled to, then fill the new one.
+  function onRenderMode() {
+    if (!current) return;
+    if (mounted === 'citations') saveCitScroll();
+    else if (mounted === 'translation') saveTransScroll();
+    renderActiveMode();
   }
 
   async function renderTranslation() {
+    mounted = 'translation';
     const e = await loadEnabled();
     const list = e.translations || [];
     if (!list.length) {
       panel.populateTranslations([], '');
-      if (e.provider === C.PROVIDER_APIBIBLE && !e.hasKey) panel.renderNoKey();
-      else panel.renderError('No translations enabled yet. Open settings (⚙) to choose.', { retry: false });
+      if (e.provider === C.PROVIDER_APIBIBLE && !e.hasKey) panel.showTranslation({ kind: 'nokey' });
+      else panel.showTranslation({ kind: 'error', message: 'No translations enabled yet. Open settings (⚙) to choose.', retry: false });
       return;
     }
     if (!selectedId || !findTranslation(selectedId)) {
@@ -167,11 +169,12 @@
     panel.populateTranslations(list, selectedId);
     // Re-attach the cached chapter (keeps scroll) instead of re-fetching.
     if (transCache && transCache.key === transKey() && transCache.node) {
-      panel.reattachContent(transCache.node, transCache.footer);
-      const body = panel.getBodyEl();
-      const top = transCache.scrollTop || 0;
-      body.scrollTop = top;
-      requestAnimationFrame(() => { body.scrollTop = top; });
+      panel.showTranslation({
+        kind: 'restore',
+        node: transCache.node,
+        footer: transCache.footer,
+        scrollTop: transCache.scrollTop || 0,
+      });
       return;
     }
     await loadChapter();
@@ -194,8 +197,10 @@
   }
 
   async function renderCitations(parsed, focusVerse) {
+    mounted = 'citations';
     const body = panel.getBodyEl();
-    const key = `${citKey(parsed)}::${citationView}`;
+    const view = panel.citationView();
+    const key = `${citKey(parsed)}::${view}`;
     // Re-attach the cached view (keeps scroll + which dropdowns are open).
     if (!focusVerse && citCache && citCache.key === key && citCache.node) {
       body.textContent = '';
@@ -211,7 +216,7 @@
       fullName: BOOKS.bookFullName(parsed.ldsBook) || parsed.ldsBook,
       focusVerse,
       onOpenTalk: openTalk,
-      view: citationView,
+      view,
     });
     citCache = { key, node, scrollTop: 0 };
   }
@@ -233,7 +238,7 @@
     if (!parsed || !tr) return;
     const chapterId = detect.toUsfmChapterId(parsed);
     const label = tr.abbr || tr.name;
-    panel.renderLoading(label);
+    panel.showTranslation({ kind: 'loading', label });
 
     const myToken = ++reqToken;
     const res = await send({
@@ -245,13 +250,15 @@
       chapter: parsed.chapter,
     });
     if (myToken !== reqToken) return; // user navigated/switched in the meantime
+    if (panel.effectiveMode() !== 'translation') return; // user toggled to citations mid-load
 
     if (!res || res.error) {
       handleError((res && res.error) || { code: C.ERR.UNKNOWN }, label);
       return;
     }
     const footer = res.copyright || tr.copyright || '';
-    const node = panel.renderContent({
+    const node = panel.showTranslation({
+      kind: 'content',
       blocks: res.blocks,
       copyright: footer,
       reference: res.reference || refLabel(parsed),
@@ -263,28 +270,28 @@
   function handleError(error, label) {
     switch (error.code) {
       case C.ERR.NO_KEY:
-        panel.renderNoKey();
+        panel.showTranslation({ kind: 'nokey' });
         break;
       case C.ERR.RATE_LIMITED: {
         const wait = Math.min(Math.max(error.retryAfterMs || 2000, 1000), 60000);
-        panel.renderError(`Rate limited. Retrying in ${Math.ceil(wait / 1000)}s…`, { retry: false });
+        panel.showTranslation({ kind: 'error', message: `Rate limited. Retrying in ${Math.ceil(wait / 1000)}s…`, retry: false });
         retryTimer = setTimeout(loadChapter, wait);
         break;
       }
       case C.ERR.NOT_FOUND:
-        panel.renderError(`${label} doesn’t have this chapter available.`, { retry: false });
+        panel.showTranslation({ kind: 'error', message: `${label} doesn’t have this chapter available.`, retry: false });
         break;
       case C.ERR.INVALID_KEY:
-        panel.renderError('Your API key was rejected. Open settings (⚙) to fix it.', { retry: false });
+        panel.showTranslation({ kind: 'error', message: 'Your API key was rejected. Open settings (⚙) to fix it.', retry: false });
         break;
       case C.ERR.FORBIDDEN:
-        panel.renderError(`Your key isn’t licensed for ${label}.`, { retry: false });
+        panel.showTranslation({ kind: 'error', message: `Your key isn’t licensed for ${label}.`, retry: false });
         break;
       case C.ERR.NETWORK:
-        panel.renderError('Network error. Check your connection.');
+        panel.showTranslation({ kind: 'error', message: 'Network error. Check your connection.' });
         break;
       default:
-        panel.renderError('Could not load this chapter.');
+        panel.showTranslation({ kind: 'error', message: 'Could not load this chapter.' });
     }
   }
 
@@ -307,59 +314,21 @@
     } catch (e) { /* ignore */ }
   }
 
-  // Adopt the settings that affect the panel. Called at startup and on every
-  // change; the module hands us already-normalized values.
-  function applySettings(s, changed) {
-    scrollToSnippet = s.scrollToSnippet;
-    citationView = s.citationView;
-    showCitationToggle = s.showCitationToggle;
-    // Touch the panel only for the settings that actually moved (`changed` is
-    // null at startup, when everything counts as new).
-    const touched = (key) => !changed || changed.includes(key);
-    if (touched('sidebarWidth')) panel.setWidth(s.sidebarWidth);
-    if (touched('citationView')) panel.setCitationView(citationView);
-    if (touched('showCitationToggle')) panel.setCitationToggleEnabled(showCitationToggle);
-  }
-
   // ---- Wire up ----
   async function init() {
-    panel.setHandlers({
+    await panel.init({
+      renderMode: onRenderMode,
       onTranslationChange: (id) => {
         selectedId = id;
         storeSelection(id);
-        if (effectiveMode() === 'translation') loadChapter();
+        if (panel.effectiveMode() === 'translation') loadChapter();
       },
       onRetry: () => loadChapter(),
       onGear: () => send({ type: C.MSG.OPEN_OPTIONS }),
-      onClose: () => { userClosed = true; panel.setVisible(false); },
-      onModeChange: (m) => {
-        if (!isBibleCurrent) return; // toggle hidden on non-Bible books
-        if (m === mode) return;
-        if (effectiveMode() === 'citations') saveCitScroll(); else saveTransScroll();
-        mode = m;
-        storeMode();
-        panel.setMode(m);
-        renderActiveMode();
-      },
-      onCitationViewChange: (view) => {
-        const v = view === 'verse' ? 'verse' : 'source';
-        if (v === citationView) return;
-        if (effectiveMode() !== 'citations') return; // toggle only acts in citations mode
-        citationView = v;
-        panel.setCitationView(v);
-        SETTINGS.patch({ citationView: v }); // echo arrives flagged as our own -> no double render
-        renderCitations(current); // cache miss on the new key -> fresh render now (resets scroll to top)
-      },
-      onResizeEnd: (px) => SETTINGS.patch({ sidebarWidth: px }),
-      onCollapsedChange: (collapsed) => {
-        try { chrome.storage.local.set({ [COLLAPSED_KEY]: collapsed }); } catch (e) { /* ignore */ }
-      },
+      onClose: () => { userClosed = true; panel.hide(); },
     });
 
-    mode = (await getStored(MODE_KEY)) === 'citations' ? 'citations' : 'translation';
-    // Restore how the user left the panel (collapsed to its edge tab, or open).
-    if ((await getStored(COLLAPSED_KEY)) === true) panel.setCollapsed(true);
-    applySettings(await SETTINGS.get(), null);
+    scrollToSnippet = (await SETTINGS.get()).scrollToSnippet;
 
     detect.setupNavigation(() => render());
 
@@ -367,13 +336,13 @@
       if (current && !userClosed) applyTheme();
     });
 
-    // Settings changed (options page, or another tab) -> adopt them live, and
-    // re-render only when it wasn't our own write and something other than the
-    // width moved.
+    // Settings changed (options page, or another tab) -> adopt what's ours, and
+    // re-render only when it wasn't our own write and something the panel
+    // doesn't own by itself moved.
     SETTINGS.subscribe(({ next, changed, own }) => {
-      applySettings(next, changed);
+      scrollToSnippet = next.scrollToSnippet;
       if (own) return; // we already rendered the change that caused this write
-      if (!changed.some((k) => k !== 'sidebarWidth')) return;
+      if (!changed.some((k) => !PANEL_KEYS.includes(k))) return;
       enabled = null;
       currentKey = null; // force a re-render with the new settings
       if (current) render();
@@ -384,7 +353,7 @@
       if (msg && msg.type === C.MSG.TOGGLE_PANEL) {
         userClosed = !userClosed;
         if (userClosed) {
-          panel.setVisible(false);
+          panel.hide();
         } else {
           currentKey = null; // force re-render after re-opening
           render();

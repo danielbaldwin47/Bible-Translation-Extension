@@ -31,7 +31,7 @@ console.log('Schema:');
 const KEYS = [
   'apiKey', 'provider', 'enabledTranslations', 'defaultTranslationId',
   'actOnNonEngOnly', 'sidebarWidth', 'scrollToSnippet', 'citationView',
-  'showCitationToggle',
+  'showCitationToggle', 'panelMode', 'panelCollapsed',
 ];
 check(Array.isArray(S.KEYS), 'exports KEYS');
 eq(S.KEYS.slice().sort(), KEYS.slice().sort(), 'KEYS covers exactly the known settings');
@@ -61,6 +61,26 @@ eq(S.normalize({ citationView: 'source' }).citationView, 'source', 'citationView
 for (const bad of ['VERSE', 'by-verse', '', 0, null, {}, undefined]) {
   eq(S.normalize({ citationView: bad }).citationView, 'source',
     `citationView ${JSON.stringify(bad)} falls back to "source"`);
+}
+
+// ---- normalize: panelMode (the panel's persisted mode preference) ----
+console.log('normalize (panelMode):');
+eq(S.defaults().panelMode, 'translation', 'panelMode defaults to "translation"');
+eq(S.normalize({ panelMode: 'citations' }).panelMode, 'citations', 'panelMode "citations" survives');
+eq(S.normalize({ panelMode: 'translation' }).panelMode, 'translation', 'panelMode "translation" survives');
+for (const bad of ['CITATIONS', 'both', '', 0, null, {}, undefined]) {
+  eq(S.normalize({ panelMode: bad }).panelMode, 'translation',
+    `panelMode ${JSON.stringify(bad)} falls back to "translation"`);
+}
+
+// ---- normalize: panelCollapsed (default-false boolean) ----
+console.log('normalize (panelCollapsed):');
+eq(S.defaults().panelCollapsed, false, 'panelCollapsed defaults to false');
+eq(S.normalize({ panelCollapsed: true }).panelCollapsed, true, 'panelCollapsed true survives');
+eq(S.normalize({ panelCollapsed: false }).panelCollapsed, false, 'panelCollapsed false survives');
+for (const bad of ['true', 1, null, undefined, {}]) {
+  eq(S.normalize({ panelCollapsed: bad }).panelCollapsed, false,
+    `panelCollapsed ${JSON.stringify(bad)} falls back to false`);
 }
 
 // ---- normalize: booleans ----
@@ -248,6 +268,11 @@ for (const file of walk(path.join(ROOT, 'src'), [])) {
   check(!/storage\.sync/.test(src), `${rel} must not touch chrome.storage.sync directly`);
   check(!/SETTINGS_KEY/.test(src), `${rel} must not reference SETTINGS_KEY directly`);
   check(!/suppressNextViewRender|sameExceptWidth/.test(src), `${rel} still has an own-write/diff workaround`);
+  // Panel mode/collapsed live in the settings module now; only the panel may
+  // still name the legacy chrome.storage.local keys (its one-time migration).
+  if (rel !== 'src/content/panel.js') {
+    check(!/btxPanelMode|btxPanelCollapsed/.test(src), `${rel} references the legacy panel-state keys (panel owns them)`);
+  }
 }
 
 // The width bounds live in the settings module only.

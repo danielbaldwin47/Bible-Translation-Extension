@@ -92,6 +92,10 @@
     citationView: { def: 'source', norm: oneOf(['source', 'verse'], 'source') },
     // Show the citation-layout sub-toggle in the panel.
     showCitationToggle: { def: true, norm: bool(true) },
+    // The panel's own state: preferred mode on Bible chapters, and whether the
+    // panel is collapsed to its edge tab. Owned and written by __BTX.panel.
+    panelMode: { def: 'translation', norm: oneOf(['translation', 'citations'], 'translation') },
+    panelCollapsed: { def: false, norm: bool(false) },
   };
 
   const KEYS = Object.keys(SCHEMA);
