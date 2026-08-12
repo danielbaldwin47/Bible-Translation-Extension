@@ -62,7 +62,7 @@ src/
     page-hook.js           page-world history patch, injected via web-accessible <script src> (CSP-safe)
     theme.js               __BTX.theme  mirror(resolveTarget) → {refresh}: owns capture/apply of site colors/fonts (+ headerBg/headerH), the launch re-apply backoff (pure nextAlignDelay, module.exports for Node) and the theme/font/resize watching; resolveReadingContainer()
     sanitize.js            __BTX.sanitize  IR → DOM (text nodes only)
-    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews/viewRestoresScroll; scrollStep — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{offset,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
+    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews/viewRestoresScroll; scrollStep/easeRamp/realignmentDone/isForeignScroll + their tuning constants — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{offset,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
     panel.css
     content.js             orchestrator: detect → worker/citations → panel data/content only (no panel state, no theme policy); answers panel's renderMode event; hands theme.mirror a getter for the panel root and calls refresh() once the panel is shown
   citations/
@@ -254,19 +254,36 @@ source-data/               GITIGNORED build input: the BYU DBs
   position `writeBodyScroll` recorded), cancels any animation and sets
   `syncDetached`. While detached the panel is the user's — nothing drags it
   back, which is the bug that made the sidebar feel unscrollable. The next page
-  scroll eases it home — deliberately slow enough to read as *"it's scrolling
-  back up"* rather than a lurch. Two constants shape that: `SCROLL_TAU_MS`
-  (300) is how fast it settles once moving, `SCROLL_RAMP_MS` (260) how long it
-  takes to get going. The ramp exists because an exponential chase is fastest
-  on its very first frame, which feels like being thrown; pure
+  scroll eases it home — visible enough to read as *"it's scrolling back up"*,
+  quick enough to stay out of the way (~90% of the travel in ~450ms).
+  `SCROLL_RAMP_MS` (130) is how long it takes to get going, `SCROLL_TAU_MS`
+  (165) how fast it settles once moving. The ramp exists because an exponential
+  chase is fastest on its very first frame, which feels like being thrown; pure
   `easeRamp(elapsed, rampMs)` (smoothstep) scales the early frames so the move
-  accelerates in and `scrollStep(from, target, dt, tau, ramp)` eases it out.
-  Both are normalized on elapsed time, so 60Hz and 120Hz feel the same.
-  Retargeting mid-flight keeps `started`, so a target that moves while we
-  re-align doesn't restart the ramp and stall the body mid-travel; on arrival
-  `syncDetached` clears and tracking is 1:1 again. Everything else is instant: **placement** on mount
-  (`placeOnMount` runs it twice, once next frame, because a fresh body is still
-  reflowing), `restoreScroll`, and `scrollIntoView` reveals.
+  accelerates in, and `scrollStep(from, target, dt, tau, ramp)` eases it out.
+  Both normalize on elapsed time, so 60Hz and 120Hz feel the same. Retargeting
+  mid-flight keeps `started`, so a target that moves while we re-align doesn't
+  restart the ramp and stall the body mid-travel.
+- **Arrival is not "distance is zero"** — pure `realignmentDone({ distance,
+  moved, elapsed, sinceTarget }, limits)` decides, and each of its three exits
+  is load-bearing. `settlePx` (2) is arrival: the last pixels of an exponential
+  are invisible, and chasing them keeps the panel in re-alignment for another
+  half second after the motion has visibly ended. `stallPx` (0.05) catches the
+  case that actually strands it — the browser rounds `scrollTop` to whole
+  pixels, so a chase aiming at a fractional target ends up asking for sub-pixel
+  steps that round away to nothing and the body *stops moving while still short*
+  (`moved` is therefore measured from where the body actually went, not where it
+  was sent; `null` on the first frame). That test stays shut until
+  `stallAfterMs`, because during ramp-in the body is meant to be nearly still —
+  reading that as arrival cancels the animation on frame one and turns every
+  re-alignment back into a teleport. `maxMs` (1800) is the backstop, measured
+  from the last *retarget* rather than from the start, so a target that keeps
+  moving while the user scrolls isn't cut off mid-travel. Get any of this wrong
+  and the rAF loop never ends, `syncDetached` never clears, and every later page
+  scroll takes the eased path instead of tracking 1:1 — the bug that shipped in
+  the second cut. `validate-panel-state.js` runs the real loop with the shipped
+  constants (exported for that reason), with and without whole-pixel rounding,
+  because a truth table over the arguments cannot see it.
 - The system `prefers-reduced-motion` signal is deliberately **not** consulted.
   The reader page scrolls smoothly whatever the OS setting says, so honoring it
   in the panel alone would make the two disagree — the panel matches the

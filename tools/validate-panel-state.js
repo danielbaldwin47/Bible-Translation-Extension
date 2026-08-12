@@ -269,6 +269,65 @@ const early = P.scrollStep(0, 1000, 16, TAU, P.easeRamp(0, RAMP));
 const later = P.scrollStep(0, 1000, 16, TAU, P.easeRamp(RAMP, RAMP));
 check(early < later, 'the first frame moves less than a frame at full speed');
 
+// ---- When a re-alignment is over ----
+// Getting this wrong strands the panel in "re-aligning" forever, and every
+// later page scroll takes the eased path instead of tracking 1:1.
+console.log('realignmentDone:');
+const LIM = P.SCROLL_LIMITS; // the shipped policy, not a copy of it
+const AFTER = LIM.stallAfterMs + 1;
+function done(distance, moved, elapsed, sinceTarget) {
+  return P.realignmentDone({ distance, moved, elapsed, sinceTarget: sinceTarget === undefined ? elapsed : sinceTarget }, LIM);
+}
+check(done(0.4, 2, AFTER) === true, 'inside the settle threshold is arrived');
+check(done(-0.4, 2, AFTER) === true, '...approaching from either side');
+check(done(50, 3, AFTER) === false, 'still far away and still moving: keep going');
+check(done(50, 0, AFTER) === true, 'far away but no longer moving at all: the browser rounded us to a stop');
+check(done(50, 0.5, AFTER) === false, 'inching along is not a stall — a step shrinks with the distance left');
+check(done(50, null, 0) === false, 'the first frame has not moved yet — that is not a stall');
+// The ramp deliberately makes the opening frames nearly still. Reading that as
+// a stall would cancel every re-alignment on frame one — the bug this guards.
+check(done(50, 0, 0) === false, 'a motionless frame during ramp-in is the ramp working, not a stall');
+check(done(50, 0, LIM.stallAfterMs - 1) === false, '...right up to the end of the ramp window');
+check(done(50, 0, AFTER) === true, '...and only counts once the ramp is open');
+check(done(50, 3, 99999, 99999) === true, 'past the cap, stop chasing whatever the distance');
+check(done(50, 3, 99999, 0) === false, 'the cap runs from the last retarget, so a moving target is not cut off mid-travel');
+
+// The truth table above cannot see the frame-to-frame behaviour, which is
+// where the real bug lived. Run the actual loop with the shipped constants.
+function realign(distance, opts) {
+  const o = opts || {};
+  const round = o.round === true;
+  let pos = 0;
+  let wasAt = null;
+  let started = null;
+  let frames = 0;
+  for (let ts = 0; ts < 20000; ts += 16) {
+    if (started === null) started = ts;
+    const moved = wasAt === null ? null : pos - wasAt;
+    const elapsed = ts - started;
+    if (P.realignmentDone({ distance: distance - pos, moved, elapsed, sinceTarget: elapsed }, LIM)) {
+      return { frames, ms: elapsed, pos: distance, snapped: Math.abs(distance - pos) };
+    }
+    wasAt = pos;
+    const ramp = P.easeRamp(elapsed, P.SCROLL_RAMP_MS);
+    pos = P.scrollStep(pos, distance, 16, P.SCROLL_TAU_MS, ramp);
+    if (round) pos = Math.round(pos); // what the browser actually stores
+    frames++;
+  }
+  return { frames, ms: 20000, pos, snapped: Math.abs(distance - pos), ranAway: true };
+}
+
+for (const d of [50, 300, 1000]) {
+  const r = realign(d);
+  check(!r.ranAway, `a ${d}px re-alignment terminates`);
+  check(r.frames > 3, `a ${d}px re-alignment actually animates (${r.frames} frames, not an instant snap)`);
+  check(r.ms < LIM.maxMs, `a ${d}px re-alignment finishes well inside the cap (${Math.round(r.ms)}ms)`);
+  check(r.snapped <= LIM.settlePx, `a ${d}px re-alignment arrives rather than jumping the last stretch`);
+  const rounded = realign(d, { round: true });
+  check(!rounded.ranAway, `a ${d}px re-alignment terminates even when the browser rounds scrollTop`);
+  check(rounded.frames > 3, `...and still animates (${rounded.frames} frames)`);
+}
+
 // ---- Telling our own scroll from the user's ----
 // The panel must never fight the user for the body. Every write records where
 // it left the body; a 'scroll' event that doesn't match that is the user's, and

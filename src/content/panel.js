@@ -218,6 +218,57 @@
     return x * x * (3 - 2 * x);
   }
 
+  // Re-alignment tuning. RAMP is how long the move takes to get going (so it
+  // has a visible beginning instead of snapping to full speed); TAU is how fast
+  // it settles once moving. Both live here, above the DOM shell, so the
+  // validator can assert the *shipped* numbers rather than a copy of them.
+  const SCROLL_TAU_MS = 165;
+  const SCROLL_RAMP_MS = 130;
+  const SCROLL_LIMITS = {
+    // Arrival, in whole pixels. Generous on purpose: the last couple of pixels
+    // of an exponential are invisible, and chasing them keeps the panel in
+    // re-alignment (not tracking 1:1) for another half second after the motion
+    // has visibly finished. The browser rounds scrollTop anyway.
+    settlePx: 2,
+    // "Didn't move at all", not "moved a little": a step is proportional to the
+    // distance left, so a larger value here would fire on the ordinary tail and
+    // make every arrival a small jump. The rounding case this exists for
+    // freezes the body completely, so it moves exactly 0.
+    stallPx: 0.05,
+    stallAfterMs: SCROLL_RAMP_MS + 32, // ...but not before the ramp is open
+    maxMs: 1800, // backstop, measured from the last time the target moved
+  };
+
+  // Is the re-alignment over? Three ways to be done, and two of them exist
+  // because a scroll container will not simply arrive where it is sent.
+  //   distance     how far is left to travel
+  //   moved        how far the body actually moved last frame — not how far it
+  //                was asked to. null on the first frame, which hasn't moved
+  //   elapsed      ms since the re-alignment began (drives the ramp)
+  //   sinceTarget  ms since the target last moved
+  //
+  // The browser rounds scrollTop to whole pixels, so a chase aiming at a
+  // fractional target eventually asks for sub-pixel steps that round away to
+  // nothing: it stops moving while still measurably short. That is the stall
+  // exit. It must stay shut until the ramp is open (`stallAfterMs`), because
+  // during ramp-in the body is *meant* to be nearly still — reading that as
+  // arrival would cancel the animation on its very first frame and turn every
+  // re-alignment back into the teleport this whole seam exists to avoid.
+  //
+  // `maxMs` runs from the last retarget, not from the start: while the user
+  // keeps scrolling the page the target moves every frame and the chase
+  // legitimately trails it, and a cap measured from the start would fire
+  // mid-travel and snap.
+  function realignmentDone(progress, limits) {
+    const p = progress || {};
+    const l = limits || SCROLL_LIMITS;
+    if (Math.abs(Number(p.distance) || 0) <= l.settlePx) return true;
+    if ((Number(p.sinceTarget) || 0) >= l.maxMs) return true;
+    const rampOpen = (Number(p.elapsed) || 0) >= l.stallAfterMs;
+    const stalled = p.moved !== null && p.moved !== undefined && Math.abs(Number(p.moved) || 0) < l.stallPx;
+    return rampOpen && stalled;
+  }
+
   // Did the body move because we moved it, or because the user did? Every write
   // records the position it left behind; a 'scroll' event reporting anything
   // else is the user's own, and the panel must yield to it rather than drag the
@@ -232,7 +283,8 @@
     module.exports = {
       createState, effectiveMode, selectMode, selectCitationView, setBible,
       createViews, saveViewScroll, selectView, keepView, settleView, dropViews,
-      viewRestoresScroll, scrollStep, easeRamp, isForeignScroll,
+      viewRestoresScroll, scrollStep, easeRamp, realignmentDone, isForeignScroll,
+      SCROLL_TAU_MS, SCROLL_RAMP_MS, SCROLL_LIMITS,
     };
   }
   if (typeof document === 'undefined') return; // Node: pure core only
@@ -526,13 +578,9 @@
   // just mounted, so there is no previous position to ease from) or the user
   // asked the system for reduced motion.
 
-  // Re-alignment feel. TAU is how fast it settles once moving; RAMP is how long
-  // it takes to get going. Both larger = gentler, more deliberate.
-  const SCROLL_TAU_MS = 300;
-  const SCROLL_RAMP_MS = 260;
-  const SCROLL_SETTLE_PX = 0.5;
   const SCROLL_OWN_PX = 1; // slack for the browser's own sub-pixel rounding
-  let bodyAnim = null; // { target, raf, last, started } while re-aligning
+  // { target, raf, last, started, retargeted, wasAt } while re-aligning
+  let bodyAnim = null;
   let lastWrittenTop = null; // where our last write left the body
   // True once the user has scrolled the panel away from the page's position.
   // While detached the panel keeps whatever position the user gave it; the next
@@ -579,15 +627,25 @@
     // settle test would never pass, leaving the rAF loop running forever.
     const target = Math.min(bodyAnim.target, maxBodyScroll());
     bodyAnim.target = target;
-    if (Math.abs(target - from) < SCROLL_SETTLE_PX) {
+    if (!bodyAnim.started) bodyAnim.started = ts;
+    if (!bodyAnim.retargeted) bodyAnim.retargeted = ts;
+    // How far the body actually travelled last frame — not how far we asked it
+    // to. The difference is the whole point: see chaseSettled.
+    const moved = bodyAnim.wasAt === null ? null : from - bodyAnim.wasAt;
+    if (realignmentDone({
+      distance: target - from,
+      moved,
+      elapsed: ts - bodyAnim.started,
+      sinceTarget: ts - (bodyAnim.retargeted || bodyAnim.started),
+    }, SCROLL_LIMITS)) {
       writeBodyScroll(target);
       stopBodyScroll();
       syncDetached = false; // caught up with the page — track it 1:1 again
       return;
     }
     const dt = bodyAnim.last ? Math.max(0, ts - bodyAnim.last) : 16;
-    if (!bodyAnim.started) bodyAnim.started = ts;
     bodyAnim.last = ts;
+    bodyAnim.wasAt = from;
     const ramp = easeRamp(ts - bodyAnim.started, SCROLL_RAMP_MS);
     writeBodyScroll(scrollStep(from, target, dt, SCROLL_TAU_MS, ramp));
     bodyAnim.raf = requestAnimationFrame(stepBodyScroll);
@@ -605,8 +663,12 @@
     }
     // Retarget in flight: keep `started`, so a target that keeps moving while we
     // re-align doesn't restart the ramp and stall the body mid-travel.
-    if (bodyAnim) { bodyAnim.target = target; return; }
-    bodyAnim = { target, last: 0, started: 0, raf: requestAnimationFrame(stepBodyScroll) };
+    if (bodyAnim) {
+      if (target !== bodyAnim.target) bodyAnim.retargeted = 0; // restart the cap, not the ramp
+      bodyAnim.target = target;
+      return;
+    }
+    bodyAnim = { target, last: 0, started: 0, retargeted: 0, wasAt: null, raf: requestAnimationFrame(stepBodyScroll) };
   }
 
   // ---- View host -------------------------------------------------------------
