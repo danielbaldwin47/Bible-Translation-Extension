@@ -69,6 +69,20 @@ holding that book's cites and a chapter→verse→citId index.
 A bundled talk ships offline as `talks/{talkId}.html.gz` (corpora E/J/T); a
 live talk (corpus G) is fetched from the Church site when opened.
 
+**Talk source**:
+The seam (`__BTX.talkSource`, `src/citations/talk-source.js`) that answers one
+question for the reader: given a cite, hand back displayable talk HTML plus a
+way to locate that cite's **scroll target** in the rendered result. It owns the
+**corpus plan** — the per-corpus table of where the HTML comes from (live vs
+bundled) and what the scroll target is (paragraph anchor / citation span / body
+passage). Always the two words together; bare "source" still means a source
+type or the BYU DBs.
+
+**Scroll target**:
+The element in a rendered talk the reader scrolls to and marks for a cite:
+the paragraph anchor (live GC), the citation span (bundled E/J), or the body
+passage (STPJS).
+
 **Snippet**:
 The short excerpt shown under a citation row. Normally the text around the
 citation span; for STPJS (`T`) it is the body passage instead.

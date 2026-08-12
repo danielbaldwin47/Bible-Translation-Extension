@@ -23,6 +23,7 @@
         "src/content/panel.js",
         "src/citations/cit-data.js",
         "src/citations/highlights.js",
+        "src/citations/talk-source.js",
         "src/citations/talk-view.js",
         "src/citations/cit-panel.js",
         "src/content/content.js"

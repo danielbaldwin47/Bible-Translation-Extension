@@ -136,6 +136,9 @@ function toChurchUrl(url) {
 // while the body carries <span class="footRef">N</span> markers. Given a footnote
 // number, return the body sentence that marker annotates (its referenced text)
 // rather than the bare scripture-reference line.
+// Build-time half of the body-passage rule; the reader states it again over the
+// sanitized DOM (src/citations/talk-source.js). Change both together — see
+// docs/adr/0006-stpjs-body-passage-stated-twice.md.
 function stpjsBodyPassage(html, num) {
   const bodyEnd = html.indexOf('<div class="footnotes"');
   const body = bodyEnd >= 0 ? html.slice(0, bodyEnd) : html;

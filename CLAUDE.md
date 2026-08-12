@@ -68,7 +68,8 @@ src/
     cit-data.js            __BTX.citData    load/cache shards, sources, gunzip bundled talks; chapterData(slug,chap) → deduped entries + each cite's in-chapter verse span + uniqueTotal
     cit-panel.js           __BTX.citPanel   two layouts (renderByVerse/renderBySource); anchorVerses dedup; formatVerses/verseLabel range labels (verseLabel exported, used by talk-view); renderByVerse pre-opens the source-type group for single-source verses; attachTools = filter box (matches speaker/title/label/snippet via row.dataset.btxSearch) + expand/collapse-all button (shown when uniqueTotal >= 4)
     highlights.js          __BTX.highlights local select-to-highlight in the reader; chrome.storage.local; re-apply on reopen
-    talk-view.js           __BTX.talkView   inline reader (live GC / bundled), sanitizer, scroll-to-citation, sticky header ("‹ Back" + "Open full talk" + cited-verse label; Esc = back); STPJS footnote rendering (blue-superscript footRef + footnote numbers, hide Prev/Next, scroll to the cited body passage)
+    talk-source.js         __BTX.talkSource load({entry,source}) → {html,url,live,findTarget(container)}; CORPUS_PLANS table (live vs bundled, scroll target per corpus); pre-2013 GC URL repair (pure pickSessionUrl/bouncedToConference/fullTalkUrl, module.exports for Node tests)
+    talk-view.js           __BTX.talkView   inline reader over that seam: sanitizer, render, highlights, generic scroll-to-target, sticky header ("‹ Back" + "Open full talk" + cited-verse label; Esc = back); footnote-number styling (blue superscripts)
     citations.css
     data/                  GENERATED, committed, shipped (~62 MB, ADR-0003):
       index.json           build meta + per-book counts (88 books)
@@ -125,8 +126,9 @@ source-data/               GITIGNORED build input: the BYU DBs
   node tools/rederive-js-snippets.js
   node tools/validate-citations.js
   ```
-- **Checks:** `node tools/validate-books.js`, `node tools/validate-citations.js`;
-  syntax: `node --check <file>` (no test runner).
+- **Checks:** `node tools/validate-books.js`, `node tools/validate-citations.js`,
+  `node --test tools/test-talk-source.js` (node:test, built in — no framework,
+  no deps); syntax: `node --check <file>`.
 
 ## Gotchas
 
@@ -137,9 +139,13 @@ source-data/               GITIGNORED build input: the BYU DBs
 - Non-Bible slugs/URL segments (`bofm`, `dc-testament`, `pgp`) and the
   `dc-testament/dc/{section}` shape are assumed from convention — confirm on a
   live page; `detect.parseLocation` gates on `BOOKS.isKnownBook`.
-- Reader scroll targets by corpus: live GC is best-effort (paragraph anchor);
-  bundled J/E scroll to the exact citation span; STPJS scrolls to the body
-  passage, not the footnote-list span.
+- Reader scroll targets by corpus live in one table, `CORPUS_PLANS` in
+  `talk-source.js`: live GC is best-effort (paragraph anchor, citation span as
+  fallback); bundled J/E scroll to the exact citation span; STPJS scrolls to the
+  body passage, not the footnote-list span. Corpus comes from `source.c`; a
+  corpus outside the table falls back on whether the talk ships a URL.
+- The STPJS body-passage rule is stated twice (build snippets vs reader scroll
+  target) on purpose — ADR-0006 says why and what to change together.
 - By-source rows are ordered by first cited verse (`byFirstVerse`); both
   citation layouts start collapsed.
 - Panel width persists in `settings.sidebarWidth` (sync). A width-only change
