@@ -16,6 +16,7 @@
       "matches": ["https://www.churchofjesuschrist.org/study/*"],
       "js": [
         "src/shared/constants.js",
+        "src/shared/settings.js",
         "src/shared/books.js",
         "src/content/sanitize.js",
         "src/content/theme.js",

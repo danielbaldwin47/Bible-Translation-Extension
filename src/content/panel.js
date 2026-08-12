@@ -280,9 +280,12 @@
   }
 
   // ---- Width: settings + drag-to-resize ----
+  // Bounds come from the settings module (the one source of truth); the extra
+  // viewport cap is this panel's own concern.
   function clampWidth(w) {
-    const max = Math.min(900, Math.floor(window.innerWidth * 0.9));
-    return Math.max(280, Math.min(max, Math.round(Number(w) || 0)));
+    const S = root.__BTX.settings;
+    const max = Math.min(S.SIDEBAR_WIDTH_MAX, Math.floor(window.innerWidth * 0.9));
+    return Math.max(S.SIDEBAR_WIDTH_MIN, Math.min(max, Math.round(Number(w) || 0)));
   }
 
   function setWidth(px) {

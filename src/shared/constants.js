@@ -76,20 +76,9 @@
       { id: 'webbe', abbr: 'WEBBE', name: 'World English Bible, British Edition' },
     ],
 
-    // Default settings object shape.
-    defaultSettings() {
-      return {
-        apiKey: '',
-        provider: 'api.bible',
-        enabledTranslations: [], // [{ id, name, abbr, provider, copyright }]
-        defaultTranslationId: '',
-        actOnNonEngOnly: true,
-        sidebarWidth: 380, // panel width in px (also adjustable by dragging)
-        scrollToSnippet: true, // open sources scrolled to the cited paragraph
-        citationView: 'source', // citations layout: 'source' (group by source) | 'verse' (group by verse)
-        showCitationToggle: true, // show the citation-layout toggle in the sidebar
-      };
-    },
+    // NOTE: the settings schema and its defaults live in
+    // src/shared/settings.js (`__BTX.settings`), which owns the whole
+    // `SETTINGS_KEY` object — reads, writes, normalization and change events.
 
     // Heuristic: is a version free/open (public domain or Creative Commons)?
     // Used to hide the free versions and surface only the copyrighted ones the

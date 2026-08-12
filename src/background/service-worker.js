@@ -9,6 +9,7 @@
 
 importScripts(
   '../shared/constants.js',
+  '../shared/settings.js',
   '../shared/books.js',
   './cache.js',
   './ratelimit.js',
@@ -16,41 +17,30 @@ importScripts(
 );
 
 const C = self.__BTX.const;
+const SETTINGS = self.__BTX.settings;
 const API = self.__BTX.api;
 const CACHE = self.__BTX.cache;
 const RATE = self.__BTX.rate;
 
-// ---- Settings (chrome.storage.sync) with a small in-memory cache ----
-let settingsCache = null;
-
-async function getSettings() {
-  if (settingsCache) return settingsCache;
-  const data = await chrome.storage.sync.get(C.SETTINGS_KEY);
-  settingsCache = Object.assign(C.defaultSettings(), data[C.SETTINGS_KEY] || {});
-  return settingsCache;
-}
-
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'sync' && changes[C.SETTINGS_KEY]) settingsCache = null;
-});
+// Settings (schema, normalization, caching, invalidation) are owned by
+// __BTX.settings — this worker is just one of its adapters.
 
 // ---- Handlers ----
 async function handleGetEnabledTranslations() {
-  const s = await getSettings();
-  const hasKey = !!s.apiKey;
+  const s = await SETTINGS.get();
   return {
-    translations: s.enabledTranslations || [],
-    defaultId: s.defaultTranslationId || '',
+    translations: s.enabledTranslations,
+    defaultId: s.defaultTranslationId,
     provider: s.provider,
-    hasKey,
-    actOnNonEngOnly: s.actOnNonEngOnly !== false,
+    hasKey: !!s.apiKey,
+    actOnNonEngOnly: s.actOnNonEngOnly,
   };
 }
 
 async function handleListBibles(msg) {
   // Used by the options page to test a key before saving. Prefer the key from
   // the message (the one being tested); fall back to the stored key.
-  const s = await getSettings();
+  const s = await SETTINGS.get();
   const key = msg.key || s.apiKey;
   const cached = !msg.key ? await CACHE.getBibles() : null;
   if (cached) return { bibles: cached };
@@ -67,7 +57,7 @@ async function handleGetChapter(msg) {
   const cached = await CACHE.getChapter(provider, bibleId, chapterId);
   if (cached) return cached;
 
-  const s = await getSettings();
+  const s = await SETTINGS.get();
 
   let result;
   if (provider === C.PROVIDER_BIBLEAPI) {
