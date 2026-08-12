@@ -203,3 +203,17 @@ source-data/               GITIGNORED build input: core.53.db / content.53.db
   "Unverified"; author email is `noreply@anthropic.com`. The git proxy port rotates
   and occasionally drops — retry pushes; clear any stale `remote.origin.pushurl`.
 ```
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues on `danielbaldwin47/Translations-and-Citations`, driven via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles, each using its default label string. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
