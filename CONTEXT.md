@@ -75,8 +75,8 @@ question for the reader: given a cite, hand back displayable talk HTML plus a
 way to locate that cite's **scroll target** in the rendered result. It owns the
 **corpus plan** — the per-corpus table of where the HTML comes from (live vs
 bundled) and what the scroll target is (paragraph anchor / citation span / body
-passage). Always the two words together; bare "source" still means a source
-type or the BYU DBs.
+passage).
+_Avoid_: source (bare — that still means a source type or the BYU DBs); always say talk source
 
 **Scroll target**:
 The element in a rendered talk the reader scrolls to and marks for a cite:

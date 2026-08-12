@@ -2,7 +2,7 @@
  * Talk source: the one place that knows how a talk is obtained and where its
  * cite sits inside it. Answers a single question for the reader —
  *
- *     load({ entry, source }) -> { html, url, live, findTarget(container) }
+ *     load({ entry, source }) -> { html, url, findTarget(container) }
  *
  * "give me displayable HTML for this cite, plus how to find its target once
  * that HTML is rendered". Corpus differences (live fetch vs bundled gzip,
@@ -34,14 +34,17 @@
     T: { fetch: 'bundled', target: 'bodyPassage' },  // Teachings of the Prophet Joseph Smith
   };
 
+  const BUNDLED = { fetch: 'bundled', target: 'citationSpan' };
+  const LIVE = { fetch: 'live', target: 'anchor' };
+
   // Resolve the plan for a talk. `hasUrl` is the escape hatch for data that
   // doesn't match the table: an unknown corpus is treated as live iff it ships a
-  // URL, and a nominally live talk without one has to read the bundle.
+  // URL, and a nominally live talk without one has to read the bundle (fetching
+  // an undefined URL would otherwise blow up the reader).
   function corpusPlan(corpus, opts) {
     const hasUrl = opts && 'hasUrl' in opts ? !!opts.hasUrl : true;
-    const plan = CORPUS_PLANS[corpus] ||
-      (hasUrl ? { fetch: 'live', target: 'anchor' } : { fetch: 'bundled', target: 'citationSpan' });
-    if (plan.fetch === 'live' && !hasUrl) return { fetch: 'bundled', target: 'citationSpan' };
+    const plan = CORPUS_PLANS[corpus] || (hasUrl ? LIVE : BUNDLED);
+    if (plan.fetch === 'live' && !hasUrl) return { ...BUNDLED };
     return { fetch: plan.fetch, target: plan.target };
   }
 
@@ -99,10 +102,14 @@
     return `${base}${sep}id=${anchor}#${anchor}`;
   }
 
+  // Absolute hrefs of every link in `html`. A single unparseable href must not
+  // abort the repair, so each one is resolved defensively.
   function hrefsIn(html, baseUrl) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const out = [];
-    for (const a of doc.querySelectorAll('a[href]')) out.push(new URL(a.getAttribute('href'), baseUrl).href);
+    for (const a of doc.querySelectorAll('a[href]')) {
+      try { out.push(new URL(a.getAttribute('href'), baseUrl).href); } catch (e) { /* skip */ }
+    }
     return out;
   }
 
@@ -151,10 +158,10 @@
   // This is the render-time half of the body-passage rule the build tool also
   // applies to snippets — see docs/adr/0006-stpjs-body-passage-stated-twice.md.
   function bodyPassageForFootnote(container, note) {
-    // talk-view's render turns the leading "N." into <span class="btx-footnum">N</span>;
-    // fall back to the raw leading number for un-styled markup.
-    const sup = note.querySelector('.btx-footnum');
-    const num = sup ? sup.textContent.trim() : (/^\s*(\d+)\./.exec(note.textContent) || [])[1];
+    // talk-view's render stamps the footnote number on data-btx-footnum; fall back
+    // to the raw leading "N." for markup that never went through it.
+    const num = note.getAttribute('data-btx-footnum') ||
+      (/^\s*(\d+)\./.exec(note.textContent) || [])[1];
     if (!num) return null;
     for (const ref of container.querySelectorAll('.btxk-footRef')) {
       if (ref.textContent.trim() === num) return ref.closest('p, .btxk-std') || ref;
@@ -163,7 +170,9 @@
   }
 
   // Locate the cite inside the rendered (sanitized) talk, per the corpus plan.
-  // Class names are the sanitizer's namespaced ones (btxk-*, see talk-view).
+  // Render contract with talk-view: source ids survive, source classes come back
+  // namespaced (`footnote` -> `btxk-footnote`), and each footnote carries its
+  // number on `data-btx-footnum`. Change one side, change this.
   function findTarget(container, { plan, entry, live }) {
     if (plan.target === 'anchor' && live && entry.anchor) {
       const hit = byId(container, entry.anchor);
@@ -180,8 +189,8 @@
   /* -------------------------------------------------------------------- load */
 
   // Public: obtain displayable HTML for `entry` plus how to find its target.
-  // Returns { html, url, live, findTarget(container) }; html is null when the
-  // talk could not be loaded (caller shows the "open on the site" fallback).
+  // Returns { html, url, findTarget(container) }; html is null when the talk
+  // could not be loaded (caller shows the "open on the site" fallback).
   async function load({ entry, source }) {
     const src = source || {};
     const plan = corpusPlan(src.c, { hasUrl: !!src.url });
@@ -202,7 +211,6 @@
     return {
       html,
       url,
-      live,
       findTarget: (container) => findTarget(container, { plan, entry, live }),
     };
   }

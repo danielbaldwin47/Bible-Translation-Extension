@@ -83,7 +83,9 @@
 
   // Bundled STPJS footnote list items begin with a literal "N." text node. Replace
   // it with a blue superscript number (no period), matching the in-body footRef
-  // markers (styled via .btx-footnum in citations.css).
+  // markers (styled via .btx-footnum in citations.css). The number is also kept on
+  // `data-btx-footnum`, which is what talk-source reads to find the body passage —
+  // the styling class stays a styling class.
   function styleFootnoteNumbers(article) {
     for (const note of article.querySelectorAll('.btxk-footnote')) {
       const tn = firstTextNode(note);
@@ -91,6 +93,7 @@
       if (!m) continue;
       tn.nodeValue = tn.nodeValue.slice(m[0].length);
       note.insertBefore(el('span', 'btx-footnum', m[2]), tn);
+      note.setAttribute('data-btx-footnum', m[2]);
     }
   }
 
