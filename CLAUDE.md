@@ -1,54 +1,48 @@
 # CLAUDE.md
 
-Guidance for working in this repo. Read this first.
+Guidance for working in this repo. Read this first. Domain terms (cite, talk,
+corpus, source type, anchor verse, snippet, …) are defined in **`CONTEXT.md`**
+— use its vocabulary. Hard-to-reverse decisions and their reasoning live in
+**`docs/adr/`**; check them before proposing structural changes.
 
 ## What this is
 
 A **Manifest V3 Chrome extension** (personal, load-unpacked) that augments the
-reader on `churchofjesuschrist.org/study` when viewing **any standard-works
-chapter** (OT/NT, Book of Mormon, D&C, Pearl of Great Price). One side panel:
+reader on `churchofjesuschrist.org/study` for any standard-works chapter. One
+side panel, two modes:
 
-1. **Translation** (Bible OT/NT only) — shows the same chapter in another version
-   (NIV, NKJV, NRSV, KJV, …) fetched from **scripture.api.bible** using the user's
-   own API key.
-2. **Citations** (all books) — shows which **General Conference talks, Journal of
-   Discourses sermons, and Teachings of Joseph Smith cite each verse** (BYU
-   Scripture Citation Index data), in one of two layouts (`citationView`): **by
-   verse** (verse → source-type → talks; a citation spanning a range appears once at
-   the first verse of each contiguous range; a verse with a single source opens its
-   source-type group pre-expanded) or **by source** (one deduped row per talk,
-   grouped by source type, tagged with the verses it cites). The layout is set in
-   options and flippable live via an in-panel **By source | By verse** sub-toggle
-   (shown only in Citations mode; hidden via the `showCitationToggle` setting).
-   Sources open inline. On non-Bible books only Citations exists (no translation), so
-   the mode toggle is hidden.
+1. **Translation** (Bible only) — the same chapter in another version (NIV,
+   NKJV, …) fetched from **scripture.api.bible** with the user's own key.
+2. **Citations** (all standard works) — which talks cite each verse (BYU
+   Scripture Citation Index data), in two citation layouts (by verse / by
+   source) flippable via an in-panel sub-toggle. Talks open inline; the reader
+   supports local highlights.
 
-In the inline talk reader the user can **select text to make local highlights**
-(stored in `chrome.storage.local` on this machine — not synced to a Church
-account; re-applied when the talk reopens). The panel mirrors the site's theme
-(light/dark/sepia), font, and size, scroll-syncs (translation mode), and its width
-is configurable (options slider + drag the left edge). Personal use only (api.bible
-+ BYU/Church content are not redistributable → **not** for the Chrome Web Store).
-
-Active branch: `claude/app-ux-visual-polish-0hxchj`.
+The panel mirrors the site's theme/font/size, scroll-syncs in Translation
+mode, and has configurable width (options slider + drag the left edge).
+Personal use only — api.bible + BYU/Church content are not redistributable, so
+**never** the Chrome Web Store (ADR-0003).
 
 ## Hard rules / conventions
 
-- **No build step for the extension.** Plain HTML/CSS/JS, loaded unpacked. Do not
-  introduce bundlers/TS for the extension itself.
-- **Module pattern:** every JS file is an IIFE that attaches to a single global
-  namespace `__BTX.<name>` (and `module.exports` for Node validators). The service
-  worker pulls shared files via `importScripts` (so it stays a *classic* worker —
-  no `"type":"module"`). Content scripts are listed in dependency order in
-  `manifest.json`; `options.html` loads shared files via `<script src>` first.
+- **No build step for the extension.** Plain HTML/CSS/JS, loaded unpacked. No
+  bundlers/TS for the extension itself (ADR-0002).
+- **Module pattern:** every JS file is an IIFE attaching to the single global
+  `__BTX.<name>` (plus `module.exports` for Node validators). The service
+  worker stays a *classic* worker (`importScripts`, no `"type":"module"`).
+  Content scripts are listed in dependency order in `manifest.json`;
+  `options.html` loads shared files via `<script src>` first (ADR-0002).
 - **No secrets/CORS in content scripts.** All api.bible calls go through the
-  **service worker** (it holds the key and has `host_permissions`). The citation
-  feature is content-script-only (static web-accessible data + same-origin GC fetch).
-- **Safe rendering:** never `innerHTML` untrusted text. Translations render from a
-  normalized JSON IR via `src/content/sanitize.js`; fetched talk HTML is run
-  through an allowlist sanitizer in `src/citations/talk-view.js`.
-- **Theme/DOM hooks are class-name-agnostic.** The site's classes are hashed;
-  read resolved computed styles / stable hooks instead (see `src/content/theme.js`).
+  **service worker** (it holds the key and has `host_permissions`). The
+  citation feature is content-script-only (static web-accessible data +
+  same-origin GC fetch).
+- **Safe rendering:** never `innerHTML` untrusted text. Translations render
+  from IR via `src/content/sanitize.js`; fetched talk HTML goes through the
+  allowlist sanitizer in `src/citations/talk-view.js`.
+- **Theme/DOM hooks are class-name-agnostic** — read computed styles / stable
+  hooks, the site's classes are hashed (ADR-0005; see `src/content/theme.js`).
+- **Highlights stay local** — `chrome.storage.local`, never the Church
+  account or sync storage (ADR-0004).
 
 ## Layout
 
@@ -76,67 +70,51 @@ src/
     highlights.js          __BTX.highlights local select-to-highlight in the reader; chrome.storage.local; re-apply on reopen
     talk-view.js           __BTX.talkView   inline reader (live GC / bundled), sanitizer, scroll-to-citation, sticky header ("‹ Back" + "Open full talk" + cited-verse label; Esc = back); STPJS footnote rendering (blue-superscript footRef + footnote numbers, hide Prev/Next, scroll to the cited body passage)
     citations.css
-    data/                  GENERATED, committed, shipped (~62 MB):
+    data/                  GENERATED, committed, shipped (~62 MB, ADR-0003):
       index.json           build meta + per-book counts (88 books)
       sources.json         { talkId: {c,sp,ti,d,lbl,url?} }
-      citations/{slug}.json { cites:{citId:{t,v,sn,a?}}, index:{chap:{verse:[citId]}} } (sn for STPJS `T` cites = the referenced body passage, not the reference line)
-      talks/{talkId}.html.gz gzipped offline text for JoD / pre-1971 GC / Joseph Smith
+      citations/{slug}.json { cites:{citId:{t,v,sn,a?}}, index:{chap:{verse:[citId]}} } (sn for STPJS `T` cites = the body passage, not the reference line)
+      talks/{talkId}.html.gz bundled talks (corpora E/J/T)
   options/                 options.html/js/css — three cards: Bible translations (api.bible key/versions/default), Citations (layout, sidebar toggle, scroll-to-snippet), Panel (width, English-only); ids unchanged, options.js wires by id
 icons/                     icon-{16,32,48,128}.png (generated by tools/make-icons.js)
 tools/
-  build-citation-data.js   builds src/citations/data/ from the app DBs (node:sqlite + zlib); ALL_VOLUMES = {1..5}; extractCitation handles STPJS footnotes; guards require.main + module.exports { extractCitation, stpjsBodyPassage, … }
+  build-citation-data.js   builds src/citations/data/ from the BYU DBs (node:sqlite + zlib); ALL_VOLUMES = {1..5}; extractCitation handles STPJS footnotes; guards require.main + module.exports { extractCitation, stpjsBodyPassage, … }
   rederive-js-snippets.js  rewrites STPJS (corpus T) snippets from the shipped talks/*.html.gz (no DBs needed)
   validate-books.js        asserts the 66-book Bible map + manifest file refs
   validate-citations.js    asserts generated citation data integrity (>= 88 books)
   make-icons.js            regenerates icons
-source-data/               GITIGNORED build input: core.53.db / content.53.db
+source-data/               GITIGNORED build input: the BYU DBs
 ```
 
-## Data model notes (BYU SCI)
+## BYU data facts
 
-- Source DBs: `core.53.db` (~44 MB index) + `content.53.db` (~54 MB zlib HTML);
-  `TalkID` joins them. **Not shipped** — gitignored in `source-data/`, but present
-  in git/LFS history at the "Add BYU citation index databases" commit.
-- `book.ParentBookID` = volume: 1 OT, 2 NT, 3 Book of Mormon, 4 D&C, 5 Pearl of
-  Great Price. The build covers all five (`ALL_VOLUMES`); ~125.8k citations / 88
-  book shards.
-- `talk.Corpus`: `G` modern GC (1971–present, on the Church site → fetched live),
-  `E` early GC (1942–70), `J` Journal of Discourses, `T` Joseph Smith (E/J/T bundled).
-  In the panel, G+E group under "General Conference", J under "Journal of
-  Discourses", T under "Teachings of the Prophet Joseph Smith".
-- Citations are marked in talk HTML as `<span class="citation" id="{citation.ID}">`;
-  modern-GC paragraphs carry `uri=".../slug.p21"` → deep-link anchors.
-- **STPJS (`T`) markup differs:** citations sit in a bottom footnote list
-  (`<div class="footnote">N. <span class="citation" id="{citId}">…refs…</span></div>`)
-  with body markers `<span class="footRef">N</span>`. The snippet and the reader's
-  scroll target use the **body passage** that footnote N annotates (sentence around the
-  matching `footRef`), via `stpjsBodyPassage`. JoD/GC carry inline citation spans, so
-  their snippets/scroll were already correct.
-- DB `book.Abbr` == our LDS slug after `space→hyphen` normalization for nearly all
-  books; the one alias is **D&C `sec` → `dc`** (`ABBR_ALIAS` in the build). D&C
-  "chapters" are section numbers (1–138); collection URL segment is `dc-testament`.
-- GC URL transform: `lds.org/ensign/...` → `churchofjesuschrist.org/study/ensign/...`;
-  modern entries already store full church URLs.
-- The build is verse-keyed (`citation_verse`): ~0.22% of citations have no verse
-  row (almost all are deliberately-skipped front matter — title page, intros,
-  witnesses, facsimiles; plus ~65 section-wide refs in shipped books) and aren't
-  shown.
+- The BYU DBs: `core.53.db` (~44 MB index) + `content.53.db` (~54 MB zlib
+  HTML), joined on `TalkID`. Gitignored, but present in git/LFS history at the
+  "Add BYU citation index databases" commit.
+- The build covers all five volumes: ~125.8k cites across 88 shards. It is
+  verse-keyed (ADR-0001) — the ~0.22% of cites with no verse row aren't shown.
+- Citation spans: `<span class="citation" id="{citId}">` in talk HTML;
+  modern-GC paragraphs carry `uri=".../slug.p21"` deep-link anchors.
+- **STPJS markup differs:** citation spans sit in a bottom footnote list
+  (`<div class="footnote">N. <span class="citation">…</span></div>`) with body
+  markers `<span class="footRef">N</span>`; `stpjsBodyPassage` derives the
+  body passage from the matching `footRef`. JoD/GC carry inline citation spans.
+- DB `book.Abbr` == our slug after space→hyphen normalization; the one alias
+  is D&C `sec` → `dc` (`ABBR_ALIAS` in the build).
+- GC URL transform: `lds.org/ensign/...` →
+  `churchofjesuschrist.org/study/ensign/...`; modern entries already store
+  full church URLs.
 
 ## Build / test / verify
 
 - **Load:** `chrome://extensions` → Developer mode → Load unpacked → repo root.
-- **Translation:** open `nt/john/3`, add an api.bible key via the ⚙ options page,
-  enable versions, pick a default.
-- **Citations:** toggle the panel to Citations; expand a verse dropdown → a
-  source-type dropdown → a talk to read inline. Also works on non-Bible books
-  (e.g. `bofm/alma/5`, `dc-testament/dc/76`, `pgp/moses/1`) where only Citations
-  shows. In the reader, select text to make a local highlight (click it to remove).
-  The layout (by verse / by source) is set in options (`citationView`) and flipped
-  live by the in-panel **By source | By verse** sub-toggle (toggle visibility set by
-  `showCitationToggle`); a ranged citation appears once at the first verse of each
-  contiguous range it cites. A verse cited by a single source opens with that
-  source-type group already expanded.
-- **Regenerate citation data** (DBs must be in `source-data/`):
+- **Translation:** open `nt/john/3`, add an api.bible key via the ⚙ options
+  page, enable versions, pick a default.
+- **Citations:** toggle the panel to Citations; expand a verse → a source-type
+  group → a talk reads inline. Also works on non-Bible books (`bofm/alma/5`,
+  `dc-testament/dc/76`, `pgp/moses/1`). In the reader, select text to
+  highlight (click a highlight to remove it).
+- **Regenerate citation data** (BYU DBs must be in `source-data/`):
   ```
   node --experimental-sqlite tools/build-citation-data.js   # reads source-data/ by default
   node tools/validate-citations.js
@@ -150,59 +128,54 @@ source-data/               GITIGNORED build input: core.53.db / content.53.db
 - **Checks:** `node tools/validate-books.js`, `node tools/validate-citations.js`;
   syntax: `node --check <file>` (no test runner).
 
-## Gotchas / not yet verified in a real browser
+## Gotchas
 
-- In-text verse badges were removed (they cluttered the reading); the per-verse
-  count now lives on the panel's verse dropdown only.
-- Local highlights anchor to a top-level block's `id` (sanitizer preserves ids)
-  with block index as fallback + char offsets + quoted text for verification; if a
-  block's text shifts, that highlight is skipped on re-apply rather than misplaced.
-  The site's own annotations/account are untouched (not feasible from the panel).
-- Non-Bible book slugs/URL segments (`bofm`, `dc-testament`, `pgp`) and the
-  `dc-testament/dc/{section}` shape are assumed from convention — confirm on a live
-  page; `detect.parseLocation` gates on `BOOKS.isKnownBook`.
-- Live-GC paragraph scroll is best-effort (matches the paragraph anchor); bundled
-  J/E scroll to the exact citation span, STPJS (`T`) scrolls to the cited **body
-  passage** (the paragraph holding the matching `footRef`), not the footnote-list span.
-- Citation counts are unique: the headline = distinct citations in the chapter
-  (`uniqueTotal`); a verse chip = distinct citations anchored at that verse. A ranged
-  citation is anchored at the first verse of each contiguous run (`anchorVerses` in
-  cit-panel), so it's not repeated under every verse. The by-source layout dedupes to
-  one row per talk (ordered by first cited verse, lowest at top — `byFirstVerse`), tagged
-  with `verseLabel`; both layouts start collapsed.
-- Panel width persists in `settings.sidebarWidth` (sync). A width-only change skips
-  the heavy translation re-render (`sameExceptWidth` in `content.js`).
-- SPA navigation is debounced via `currentKey` in `content.js`; mode toggles re-render
-  directly (bypassing that dedupe). Reset `currentKey = null` to force a re-render.
+- Highlights anchor to a top-level block's `id` (the sanitizer preserves ids),
+  falling back to block index + char offsets + quoted text for verification;
+  if a block's text shifts, that highlight is skipped on re-apply rather than
+  misplaced.
+- Non-Bible slugs/URL segments (`bofm`, `dc-testament`, `pgp`) and the
+  `dc-testament/dc/{section}` shape are assumed from convention — confirm on a
+  live page; `detect.parseLocation` gates on `BOOKS.isKnownBook`.
+- Reader scroll targets by corpus: live GC is best-effort (paragraph anchor);
+  bundled J/E scroll to the exact citation span; STPJS scrolls to the body
+  passage, not the footnote-list span.
+- By-source rows are ordered by first cited verse (`byFirstVerse`); both
+  citation layouts start collapsed.
+- Panel width persists in `settings.sidebarWidth` (sync). A width-only change
+  skips the heavy translation re-render (`sameExceptWidth` in `content.js`).
+- SPA navigation is debounced via `currentKey` in `content.js`; mode toggles
+  re-render directly (bypassing that dedupe). Reset `currentKey = null` to
+  force a re-render.
 - The citations view is cached (`citCache` in `content.js`) so toggling
-  Translation↔Citations preserves scroll + open dropdowns (and any active filter
-  text); invalidated on chapter change / settings re-render. `cit-panel.render`
+  Translation↔Citations preserves scroll, open dropdowns, and filter text;
+  invalidated on chapter change / settings re-render. `cit-panel.render`
   returns the wrapper node it builds.
-- Citations filter: hides non-matching `.btx-cit` rows and empty `details` groups
-  (`.btx-cit-hidden`), auto-opens surviving groups while filtering, and restores
-  each group's pre-filter open state on clear (`preFilterOpen` map). The
+- Citations filter: hides non-matching `.btx-cit` rows and empty `details`
+  groups (`.btx-cit-hidden`), auto-opens surviving groups while filtering,
+  restores pre-filter open state on clear (`preFilterOpen`). The
   expand/collapse-all label updates via a capture-phase `toggle` listener
-  ('toggle' doesn't bubble). Snippets are clamped to 3 lines in CSS.
-- The talk reader header is position:sticky inside `.btx-body` (negative margins
-  cancel the body padding); `scrollToCitation` takes an `offset` so the target
-  lands below it. Esc = Back (document-level handler, rebound per open(),
-  self-removing when its reader is gone). Panel collapsed state persists in
-  `chrome.storage.local` (`btxPanelCollapsed`).
-- The history hook loads `page-hook.js` via `chrome.runtime.getURL` (the page CSP
-  allow-lists our extension origin in `script-src`), not an inline script — avoids
-  CSP violations and keeps instant nav detection; the 750ms poll is the fallback.
-- The panel pins to `top:0`; its header height matches the site's sticky toolbar via
-  `--btx-header-h` (`theme.captureHeaderHeight`, cached once found) and its bg mirrors
-  the toolbar grey via `--btx-header-bg` (`theme.captureHeaderBg`, exact if a solid
-  `<header>` bg is readable, else a derived shade) so the title bar lines up with the
-  site's icon row. The toolbar may not be laid out at first paint, so
-  `content.js applyThemeUntilAligned` re-applies the theme on a short backoff until
-  `theme.headerHeightKnown()` — otherwise the bars misalign until a resize. It stays
-  put when the site header expands (it doesn't track it).
+  ('toggle' doesn't bubble). Snippets clamp to 3 lines in CSS.
+- The talk reader header is position:sticky inside `.btx-body` (negative
+  margins cancel the body padding); `scrollToCitation` takes an `offset` so
+  the target lands below it. Esc = Back (document-level handler, rebound per
+  open(), self-removing when its reader is gone). Panel collapsed state
+  persists in `chrome.storage.local` (`btxPanelCollapsed`).
+- The history hook loads `page-hook.js` via `chrome.runtime.getURL` (the page
+  CSP allow-lists our extension origin in `script-src`), not an inline script
+  — avoids CSP violations and keeps instant nav detection; the 750ms poll is
+  the fallback.
+- The panel pins to `top:0`; its header height and background mirror the
+  site's sticky toolbar via `--btx-header-h` / `--btx-header-bg`
+  (`theme.captureHeaderHeight` / `captureHeaderBg`). The toolbar may not be
+  laid out at first paint, so `content.js applyThemeUntilAligned` re-applies
+  the theme on a short backoff until `theme.headerHeightKnown()` — otherwise
+  the bars misalign until a resize. The panel stays put when the site header
+  expands (it doesn't track it).
 - Commits here are unsigned (no signing key in the container) → GitHub shows
-  "Unverified"; author email is `noreply@anthropic.com`. The git proxy port rotates
-  and occasionally drops — retry pushes; clear any stale `remote.origin.pushurl`.
-```
+  "Unverified"; author email is `noreply@anthropic.com`. The git proxy port
+  rotates and occasionally drops — retry pushes; clear any stale
+  `remote.origin.pushurl`.
 
 ## Agent skills
 
