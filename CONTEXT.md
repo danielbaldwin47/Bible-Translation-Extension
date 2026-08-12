@@ -106,9 +106,15 @@ verse chip counts distinct cites anchored at that verse.
 ## Panel
 
 **Mode**:
-Which of the panel's two features is showing: Translation (Bible only) or
-Citations (all standard works). On non-Bible books only Citations exists and
-the mode toggle is hidden.
+The user's preferred panel feature on Bible chapters: Translation (Bible only)
+or Citations (all standard works). Stored as the `panelMode` setting, owned by
+the panel.
+
+**Effective mode**:
+The mode actually showing. Equals the mode on Bible chapters; on non-Bible
+books only Citations exists, so citations is forced and the mode toggle is
+hidden — the stored preference survives untouched. `panel.effectiveMode()` is
+the one source of truth.
 
 **Citation layout**:
 How the Citations mode arranges rows: **by verse** (verse → source-type group →
@@ -159,10 +165,14 @@ HTML.
 
 **Setting**:
 One user preference in the synced `btxSettings` object (`chrome.storage.sync`)
-— api key, enabled translations, citation layout, panel width, … Owned
-end-to-end by `__BTX.settings`: schema, defaults, normalization, reads, writes
-and change events. Panel state kept per-machine in `chrome.storage.local`
-(selected translation, mode, collapsed, highlights) is *not* a setting.
+— api key, enabled translations, citation layout, panel mode, panel width,
+collapsed, … Owned end-to-end by `__BTX.settings`: schema, defaults,
+normalization, reads, writes and change events. The panel's own state
+(`panelMode`, `panelCollapsed`, `citationView`, `sidebarWidth`) is settings
+too: in the reader only `__BTX.panel` writes it, and the panel adopts any
+external write (the options page edits `citationView`/`sidebarWidth` as one).
+What stays per-machine in `chrome.storage.local` (selected translation,
+highlights) is *not* a setting.
 _Avoid_: config, preference (as a code term)
 
 **Normalizer**:

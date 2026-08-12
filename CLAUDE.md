@@ -50,7 +50,7 @@ Personal use only — api.bible + BYU/Church content are not redistributable, so
 manifest.json              MV3 (v1.3.0, "Translations & Citations for Gospel Library"); content_scripts order matters
 src/
   shared/constants.js      __BTX.const  message types, storage keys, API bases, limits, isFreeVersion()
-  shared/settings.js       __BTX.settings  THE owner of the `btxSettings` sync object: SCHEMA/KEYS/defaults (apiKey, provider, enabledTranslations, defaultTranslationId, actOnNonEngOnly, sidebarWidth, scrollToSnippet, citationView, showCitationToggle), one normalizer per setting, normalize/diff (pure), get/patch/replace, subscribe({next,prev,changed,own})
+  shared/settings.js       __BTX.settings  THE owner of the `btxSettings` sync object: SCHEMA/KEYS/defaults (apiKey, provider, enabledTranslations, defaultTranslationId, actOnNonEngOnly, sidebarWidth, scrollToSnippet, citationView, showCitationToggle, panelMode, panelCollapsed), one normalizer per setting, normalize/diff (pure), get/patch/replace, subscribe({next,prev,changed,own})
   shared/books.js          __BTX.books  66 Bible (slug→USFM/name) + non-Bible registry (BoM/D&C/PGP); bookFullName, isScriptureCollection, isKnownBook
   background/
     service-worker.js      classic worker; importScripts shared+libs; onMessage router
@@ -62,9 +62,9 @@ src/
     page-hook.js           page-world history patch, injected via web-accessible <script src> (CSP-safe)
     theme.js               __BTX.theme  mirror site colors/fonts (+ headerBg); resolveReadingContainer(); captureHeaderHeight/headerHeightKnown
     sanitize.js            __BTX.sanitize  IR → DOM (text nodes only)
-    panel.js               __BTX.panel  panel DOM, states, mode toggle + citation-layout sub-toggle (setCitationView/setCitationToggleEnabled), scroll-sync, setWidth + drag-resize, setBibleMode; setCollapsed fires onCollapsedChange (collapsed state persisted by content.js)
+    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize. Pure state core (createState/effectiveMode/selectMode/selectCitationView/setBible, module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showTranslation({kind}), populateTranslations, getBodyEl/getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
     panel.css
-    content.js             orchestrator: detect → worker/citations → panel; mode (citations-only on non-Bible), width persistence; citationView; applyThemeUntilAligned (re-applies theme at launch until the site toolbar height resolves)
+    content.js             orchestrator: detect → worker/citations → panel data/content only (no panel state); answers panel's renderMode event; applyThemeUntilAligned (re-applies theme at launch until the site toolbar height resolves)
   citations/
     cit-data.js            __BTX.citData    load/cache shards, sources, gunzip bundled talks; chapterData(slug,chap) → deduped entries + each cite's in-chapter verse span + uniqueTotal
     cit-view-model.js      __BTX.citVM (+ module.exports) PURE, no DOM: buildView(chapterData, {view,fullName,chapter,focusVerse}) → descriptor tree (verse / source-type groups, citation rows, uids, counts, range + summary labels, single-source pre-open); anchorVerses dedup; formatVerses/verseLabel; byFirstVerse/byDateDesc; toolbar state machine (initialState/filterPlan/applyPlan/toggleAllPlan/toggleLabel)
@@ -132,10 +132,12 @@ source-data/               GITIGNORED build input: the BYU DBs
   ```
 - **Checks:** `node tools/validate-books.js`, `node tools/validate-settings.js`,
   `node tools/validate-citations.js`, `node tools/validate-cit-view-model.js`,
+  `node tools/validate-panel-state.js`,
   `node --test tools/test-talk-source.js` (node:test, built in — no framework,
-  no deps); syntax: `node --check <file>`. Panel logic is testable only if it
-  stays in `cit-view-model.js` — put new ordering/grouping/labelling rules
-  there, not in `cit-panel.js`.
+  no deps); syntax: `node --check <file>`. Citations logic is testable only if
+  it stays in `cit-view-model.js` — put new ordering/grouping/labelling rules
+  there, not in `cit-panel.js`. Same for the panel: mode/toggle semantics live
+  in panel.js's pure state core (validate-panel-state.js), not the DOM shell.
 
 ## Gotchas
 
@@ -161,8 +163,21 @@ source-data/               GITIGNORED build input: the BYU DBs
 - Settings go through `__BTX.settings` — never `chrome.storage.sync` directly
   (`validate-settings.js` enforces this). `subscribe` reports `changed` (the
   keys that actually moved) and `own` (this context made the write), which is
-  how `content.js` skips a re-render for a width-only change or for its own
-  citation-layout write.
+  how `content.js` skips a re-render for panel-owned keys or for its own
+  writes.
+- Panel state (mode, citation layout, collapsed, width) has one owner in the
+  reader: `__BTX.panel`, persisted through `__BTX.settings` (`panelMode`,
+  `panelCollapsed`, `citationView`, `sidebarWidth`). The options page also
+  writes `citationView`/`sidebarWidth`; the panel adopts those like any
+  external change and fires `renderMode` when they stale its content — unless
+  the same write moved a non-panel key, in which case the orchestrator's full
+  re-render covers it (its subscriber ignores changes touching only
+  `PANEL_KEYS`; the panel's `PANEL_HANDLED_KEYS` mirrors that list). The
+  options Save uses `SETTINGS.patch`, not `replace`, so panel keys absent from
+  the form survive. The old `chrome.storage.local` keys
+  (`btxPanelMode`/`btxPanelCollapsed`) are migrated once by `panel.init` —
+  nothing else may name them (the ownership walk in `validate-settings.js`
+  enforces it).
 - Panel width persists in `settings.sidebarWidth` (sync). The 280–900 bounds
   live only in `__BTX.settings` (`SIDEBAR_WIDTH_MIN/MAX`); `panel.clampWidth`
   and the options slider read them from there (`clampWidth` adds its own 90%
@@ -171,9 +186,10 @@ source-data/               GITIGNORED build input: the BYU DBs
   detected) and carries through any key the schema doesn't know, so a newer
   version's setting on another synced machine isn't deleted. Neither is a
   setting, so neither shows up in `diff`.
-- SPA navigation is debounced via `currentKey` in `content.js`; mode toggles
-  re-render directly (bypassing that dedupe). Reset `currentKey = null` to
-  force a re-render.
+- SPA navigation is debounced via `currentKey` in `content.js`; panel-initiated
+  changes (mode/layout toggles) arrive via the panel's `renderMode` event
+  instead, bypassing that dedupe. Reset `currentKey = null` to force a
+  re-render.
 - The citations view is cached (`citCache` in `content.js`) so toggling
   Translation↔Citations preserves scroll, open dropdowns, and filter text;
   invalidated on chapter change / settings re-render. `cit-panel.render`
@@ -188,8 +204,7 @@ source-data/               GITIGNORED build input: the BYU DBs
 - The talk reader header is position:sticky inside `.btx-body` (negative
   margins cancel the body padding); `talkView.scrollToTarget` takes an `offset`
   so the target lands below it. Esc = Back (document-level handler, rebound per
-  open(), self-removing when its reader is gone). Panel collapsed state
-  persists in `chrome.storage.local` (`btxPanelCollapsed`).
+  open(), self-removing when its reader is gone).
 - The history hook loads `page-hook.js` via `chrome.runtime.getURL` (the page
   CSP allow-lists our extension origin in `script-src`), not an inline script
   — avoids CSP violations and keeps instant nav detection; the 750ms poll is

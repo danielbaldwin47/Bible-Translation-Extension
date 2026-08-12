@@ -133,7 +133,9 @@
     if (!enabled.some((t) => t.id === defaultId)) defaultId = enabled.length ? enabled[0].id : '';
 
     // The module normalizes every field, so the form can hand over raw values.
-    settings = await SETTINGS.replace({
+    // patch, not replace: the form covers only these settings — the panel's own
+    // state (panelMode, panelCollapsed) must survive a Save untouched.
+    settings = await SETTINGS.patch({
       apiKey: els.apiKey.value,
       provider: C.PROVIDER_APIBIBLE,
       enabledTranslations: enabled,
