@@ -31,7 +31,7 @@ console.log('Schema:');
 const KEYS = [
   'apiKey', 'provider', 'enabledTranslations', 'defaultTranslationId',
   'actOnNonEngOnly', 'sidebarWidth', 'scrollToSnippet', 'citationView',
-  'showCitationToggle', 'panelMode', 'panelCollapsed',
+  'showCitationToggle', 'panelMode', 'panelCollapsed', 'scrollSync',
 ];
 check(Array.isArray(S.KEYS), 'exports KEYS');
 eq(S.KEYS.slice().sort(), KEYS.slice().sort(), 'KEYS covers exactly the known settings');
@@ -85,7 +85,7 @@ for (const bad of ['true', 1, null, undefined, {}]) {
 
 // ---- normalize: booleans ----
 console.log('normalize (booleans):');
-for (const key of ['actOnNonEngOnly', 'scrollToSnippet', 'showCitationToggle']) {
+for (const key of ['actOnNonEngOnly', 'scrollToSnippet', 'showCitationToggle', 'scrollSync']) {
   eq(S.defaults()[key], true, `${key} defaults to true`);
   eq(S.normalize({ [key]: false })[key], false, `${key} false survives`);
   eq(S.normalize({ [key]: true })[key], true, `${key} true survives`);

@@ -255,17 +255,23 @@
 /* ---- Inline talk reader ---- */
 /* Sticky within the scrolling panel body, so "‹ Back" and "Open full talk" stay
    reachable while deep in a long talk. Negative margins stretch it to the body's
-   edges (cancelling the body padding) so content scrolls cleanly underneath. */
+   edges (cancelling the body padding) so content scrolls cleanly underneath.
+   Sticky pins the *margin* box, not the border box, so the top offset has to
+   undo the negative top margin — the two must sum to zero. With `top: 0` the
+   header came to rest a body-padding below the top of the scrollport, and talk
+   text scrolled through the strip that left (issue #26). Both numbers come from
+   panel.css's body-padding variables (the manifest always loads it alongside
+   this file) so they can't drift from the padding they undo. */
 #btx-root .btx-talk-header {
   position: sticky;
-  top: 0;
+  top: calc(-1 * var(--btx-body-pad-top));
   z-index: 3;
   background: var(--btx-bg);
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: -14px -16px 10px;
-  padding: 10px 16px 8px;
+  margin: calc(-1 * var(--btx-body-pad-top)) calc(-1 * var(--btx-body-pad-x)) 10px;
+  padding: 10px var(--btx-body-pad-x) 8px;
   border-bottom: 1px solid var(--btx-border);
 }
 #btx-root .btx-talk-back {

@@ -120,6 +120,18 @@ check(/els\.defaultTranslation\.value = pickDefaultId\(/.test(refreshBody),
   'the preselected default comes from pickDefaultId');
 check(/fillPlan\(/.test(src), 'the live refresh asks fillPlan what to repaint');
 
+// Every single-value setting this form edits belongs in FIELDS — that table is
+// what makes Save and fillForm (and so the dirty flag) agree about it. A
+// control wired up outside it would save but never adopt an external change.
+const fieldsTable = (src.match(/const FIELDS = \[[\s\S]*?\n {2}\];/) || [''])[0];
+check(fieldsTable, 'FIELDS is still one literal table in the shell');
+const html = fs.readFileSync(path.join(ROOT, 'src/options/options.html'), 'utf8');
+for (const key of ['scrollSync', 'scrollToSnippet', 'actOnNonEngOnly', 'showCitationToggle', 'sidebarWidth']) {
+  check(new RegExp(`key: '${key}'`).test(fieldsTable), `${key} is a FIELDS row (so Save writes it and fillForm repaints it)`);
+  check(new RegExp(`id="${key}"`).test(html), `${key} has a control on the options page`);
+}
+check(/id="panelCard"[\s\S]*id="scrollSync"/.test(html), 'the scroll-sync checkbox sits in the Panel card');
+
 if (failures) {
   console.error(`\n${failures} check(s) failed.`);
   process.exit(1);

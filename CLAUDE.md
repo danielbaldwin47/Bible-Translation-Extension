@@ -50,7 +50,7 @@ Personal use only — api.bible + BYU/Church content are not redistributable, so
 manifest.json              MV3 (v1.3.0, "Translations & Citations for Gospel Library"); content_scripts order matters
 src/
   shared/constants.js      __BTX.const  message types, storage keys, API bases, limits, isFreeVersion()
-  shared/settings.js       __BTX.settings  THE owner of the `btxSettings` sync object: SCHEMA/KEYS/defaults (apiKey, provider, enabledTranslations, defaultTranslationId, actOnNonEngOnly, sidebarWidth, scrollToSnippet, citationView, showCitationToggle, panelMode, panelCollapsed), one normalizer per setting, normalize/diff (pure), get/patch/replace, subscribe({next,prev,changed,own})
+  shared/settings.js       __BTX.settings  THE owner of the `btxSettings` sync object: SCHEMA/KEYS/defaults (apiKey, provider, enabledTranslations, defaultTranslationId, actOnNonEngOnly, sidebarWidth, scrollToSnippet, citationView, showCitationToggle, panelMode, panelCollapsed, scrollSync), one normalizer per setting, normalize/diff (pure), get/patch/replace, subscribe({next,prev,changed,own})
   shared/books.js          __BTX.books  66 Bible (slug→USFM/name) + non-Bible registry (BoM/D&C/PGP); bookFullName, isScriptureCollection, isKnownBook
   background/
     service-worker.js      classic worker; importScripts shared+libs; onMessage router
@@ -62,7 +62,7 @@ src/
     page-hook.js           page-world history patch, injected via web-accessible <script src> (CSP-safe)
     theme.js               __BTX.theme  mirror(resolveTarget) → {refresh}: owns capture/apply of site colors/fonts (+ headerBg/headerH), the launch re-apply backoff (pure nextAlignDelay, module.exports for Node) and the theme/font/resize watching; resolveReadingContainer()
     sanitize.js            __BTX.sanitize  IR → DOM (text nodes only)
-    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews/viewRestoresScroll; scrollStep/easeRamp/floorStep/carryScroll/realignmentDone/isForeignScroll/revealTop + their tuning constants — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{clearTop,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
+    panel.js               __BTX.panel  deep module: owns mode/citation-layout/collapsed/width + their persistence (settings keys panelMode/panelCollapsed/citationView/sidebarWidth), DOM, scroll-sync, drag-resize, AND the view host (view caching/invalidation + sole ownership of body scrollTop). Pure cores (createState/effectiveMode/selectMode/selectCitationView/setBible; createViews/saveViewScroll/selectView/keepView/settleView/dropViews/viewRestoresScroll/wantsScrollSync; scrollStep/easeRamp/floorStep/carryScroll/realignmentDone/isForeignScroll/revealTop + their tuning constants — module.exports for Node). API: init(handlers) → showChapter/hide, effectiveMode(), citationView(), showView({name,key,cache,render}), scrollIntoView(target,{clearTop,frames}), showTranslation({kind}), populateTranslations, getRootEl; events: renderMode, onTranslationChange, onGear, onClose, onRetry
     panel.css
     content.js             orchestrator: detect → worker/citations → panel data/content only (no panel state, no theme policy); answers panel's renderMode event; hands theme.mirror a getter for the panel root and calls refresh() once the panel is shown
   citations/
@@ -78,7 +78,7 @@ src/
       sources.json         { talkId: {c,sp,ti,d,lbl,url?} }
       citations/{slug}.json { cites:{citId:{t,v,sn,a?}}, index:{chap:{verse:[citId]}} } (sn for STPJS `T` cites = the body passage, not the reference line)
       talks/{talkId}.html.gz bundled talks (corpora E/J/T)
-  options/                 options.html/js/css — three cards: Bible translations (api.bible key/versions/default), Citations (layout, sidebar toggle, scroll-to-snippet), Panel (width, English-only); ids unchanged, options.js wires by id. Pure core (module.exports for Node): initialChecks/pickDefaultId/translationPatch/fillPlan — an untested key writes no translation list, and the dirty flag decides what an external change may repaint
+  options/                 options.html/js/css — three cards: Bible translations (api.bible key/versions/default), Citations (layout, sidebar toggle, scroll-to-snippet), Panel (width, scroll-sync, English-only); ids unchanged, options.js wires by id. Pure core (module.exports for Node): initialChecks/pickDefaultId/translationPatch/fillPlan — an untested key writes no translation list, and the dirty flag decides what an external change may repaint
 icons/                     icon-{16,32,48,128}.png (generated by tools/make-icons.js)
 tools/
   build-citation-data.js   builds src/citations/data/ from the BYU DBs (node:sqlite + zlib); ALL_VOLUMES = {1..5}; extractCitation handles STPJS footnotes; guards require.main + module.exports { extractCitation, stpjsBodyPassage, … }
@@ -173,12 +173,14 @@ source-data/               GITIGNORED build input: the BYU DBs
   writes.
 - Panel state (mode, citation layout, collapsed, width) has one owner in the
   reader: `__BTX.panel`, persisted through `__BTX.settings` (`panelMode`,
-  `panelCollapsed`, `citationView`, `sidebarWidth`). The options page also
+  `panelCollapsed`, `citationView`, `sidebarWidth`). *Handled* is not *owned*:
+  `scrollSync` is in `panel.HANDLED_KEYS` too, but the panel only ever reads it
+  — the options page is its sole writer. The options page also
   writes `citationView`/`sidebarWidth`; the panel adopts those like any
   external change and fires `renderMode` when they stale its content — unless
   the same write moved a non-panel key, in which case the orchestrator's full
   re-render covers it (its subscriber ignores changes touching only
-  `panel.HANDLED_KEYS`, which the panel owns — `content.js` reads that list
+  `panel.HANDLED_KEYS`, which the panel handles itself — `content.js` reads that list
   instead of restating it). The options Save uses `SETTINGS.patch`, not
   `replace`, so panel keys absent from the form survive, and the options page
   `subscribe`s so its form adopts what the panel changes while it is open
@@ -252,11 +254,16 @@ source-data/               GITIGNORED build input: the BYU DBs
   `reqToken` / `effectiveMode()` guards around `loadChapter` are what keep a
   stale chapter response off the wrong view.
 - Each view either **owns** its scroll position or is **page-synced**, never
-  both — `viewRestoresScroll(name)` in the pure core is the rule (see
+  both — `viewRestoresScroll(name, scrollSync)` in the pure core is the rule (see
   `validate-panel-state.js`). Citations and the talk reader own theirs
   (`saveViewScroll` on the way out, `restoreScroll` on the way back).
-  Translation is page-synced: the page scroll is the source of truth, so it
-  saves nothing and `placeSyncedView` puts it where the page says. Before this,
+  Translation is page-synced: the page scroll is the source of truth, so it is
+  never restored to a saved offset and `placeSyncedView` puts it where the page
+  says — **unless the
+  `scrollSync` setting is off**, in which case nothing is page-synced and
+  Translation saves/restores like the rest (otherwise a Translation↔Citations
+  round trip would come back placed against a page that is no longer allowed to
+  move it). Before this,
   restore and `syncNow` both wrote the body and the next page-scroll frame
   silently undid the restore. `syncNow` refuses to write unless the *page-synced
   view is the mounted one* — a sync firing while Citations is still up (the mode
@@ -326,14 +333,26 @@ source-data/               GITIGNORED build input: the BYU DBs
   The reader page scrolls smoothly whatever the OS setting says, so honoring it
   in the panel alone would make the two disagree — the panel matches the
   browser, not the OS.
-- `refreshScrollSync` is called only where its predicate
-  (`visible && !collapsed && effectiveMode === 'translation'`) can move:
-  `applyModeUI`, `applyCollapsedUI`, `hide()`. Rendering content is not a state
+- `refreshScrollSync` is called only where its predicate can move. The predicate
+  is the pure `wantsScrollSync(state, { visible, scrollSync })` — four inputs
+  (`visible`, `collapsed`, effective mode, the setting) — and its four call
+  sites are `applyModeUI`, `applyCollapsedUI`, `hide()`, and the `scrollSync`
+  branch of `onSettingsChange`. Rendering content is not a state
   change — don't re-assert it from `showTranslation`. On attach it calls
   `syncNow` itself so expanding from collapsed agrees with the page without
   waiting for a scroll event; on a *mode* switch that call is a no-op (Citations
   is still the mounted view, and `syncNow` won't touch it) and `placeSyncedView`
   at mount is what lands it.
+- The `scrollSync` setting (default **on**) turns off *all* panel auto-scrolling,
+  not just the eased re-alignment: off, the page never moves the body. It reaches
+  the body twice — `wantsScrollSync` (no page-scroll listener at all) and
+  `viewRestoresScroll` (Translation now owns its scroll). Both are enough on their
+  own for the common path; together they also cover view placement, which runs
+  outside the listener. Turning it back on re-attaches and syncs immediately
+  (instant, like expanding from collapsed — a settings flip is not a page scroll,
+  so it doesn't take the eased path). The panel handles the key itself, so it is
+  in `PANEL_HANDLED_KEYS`: the change moves who scrolls the body, never what is
+  in it, so no re-render.
 - Citations filter: `citVM.filterPlan` decides what hides (`.btx-cit-hidden` on
   non-matching rows and groups left empty), auto-opens surviving groups while
   filtering, and restores the pre-filter open state on clear (`preFilterOpen`,
@@ -346,7 +365,11 @@ source-data/               GITIGNORED build input: the BYU DBs
   `talkView.revealTarget` passes its measured height as `clearTop` to
   `panel.scrollIntoView`, which is all it contributes — the placement itself is
   the panel's. Esc = Back (document-level handler, rebound per open(),
-  self-removing when its reader is gone).
+  self-removing when its reader is gone). Its sticky `top` and that negative top
+  margin must sum to zero — sticky pins the *margin* box, so `top: 0` rests the
+  header a body-padding below the scrollport (the reason for #26; the CSS
+  comment has the mechanism). The body's top/inline padding is a literal only in
+  `#btx-root`'s `--btx-body-pad-top` / `--btx-body-pad-x`, which both rules read.
 - The history hook loads `page-hook.js` via `chrome.runtime.getURL` (the page
   CSP allow-lists our extension origin in `script-src`), not an inline script
   — avoids CSP violations and keeps instant nav detection; the 750ms poll is
