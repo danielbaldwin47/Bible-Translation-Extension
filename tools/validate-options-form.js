@@ -70,7 +70,7 @@ eq(F.translationPatch({ versionsLoaded: true, enabled: [], defaultId: 'niv' }),
 // ---- fillPlan: what an incoming change is allowed to repaint ----
 console.log('fillPlan:');
 const FIELD_KEYS = ['apiKey', 'citationView', 'sidebarWidth'];
-const plan = (changed, dirty) => F.fillPlan({ fieldKeys: FIELD_KEYS, changed, dirty });
+const plan = (changed, dirty) => F.fillPlan({ fieldKeys: FIELD_KEYS, changed, dirty: new Set(dirty) });
 
 eq(plan(null, []), { fields: FIELD_KEYS, relist: true, reselect: false },
   'the initial fill (no `changed`) paints every field and the list');
@@ -101,18 +101,23 @@ eq(plan(null, ['citationView', 'enabledTranslations']),
 
 // ---- the DOM shell stays out of Node ----
 console.log('Shell:');
-check(typeof F.init === 'undefined', 'requiring the page in Node exposes only the pure core');
+eq(Object.keys(F).sort(), ['fillPlan', 'initialChecks', 'pickDefaultId', 'translationPatch'],
+  'requiring the page in Node exposes the pure core and nothing else');
 
 // ---- the shell actually uses the core ----
+// Greps, because the DOM half can't run here — each one guards an invariant a
+// past bug broke, not a spelling.
 console.log('Wiring:');
 const fs = require('fs');
 const src = fs.readFileSync(path.join(ROOT, 'src/options/options.js'), 'utf8');
-check(/translationPatch\(/.test(src) && /Object\.assign\(partial, translationPatch/.test(src),
-  'Save routes the translation list through translationPatch');
-check(!/prev = els\.defaultTranslation\.value/.test(src),
-  'refreshDefaultOptions no longer prefers the control it is about to rebuild');
-check(/function refreshDefaultOptions\(wanted\)/.test(src),
-  'refreshDefaultOptions takes the id to preselect as an argument');
+check(/Object\.assign\(partial, translationPatch\(/.test(src),
+  'Save routes the translation list through translationPatch (never writes the two keys directly)');
+const refreshBody = (src.match(/function refreshDefaultOptions[\s\S]*?\n {2}}\n/) || [''])[0];
+check(refreshBody, 'refreshDefaultOptions is still a top-level function of the shell');
+check(!/=\s*els\.defaultTranslation\.value/.test(refreshBody),
+  'refreshDefaultOptions never reads back the control it is about to rebuild');
+check(/els\.defaultTranslation\.value = pickDefaultId\(/.test(refreshBody),
+  'the preselected default comes from pickDefaultId');
 check(/fillPlan\(/.test(src), 'the live refresh asks fillPlan what to repaint');
 
 if (failures) {

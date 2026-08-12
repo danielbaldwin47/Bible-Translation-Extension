@@ -18,11 +18,6 @@
 
   // ---- Pure form core (Node-testable) ------------------------------------
 
-  function isDirty(dirty, key) {
-    if (!dirty) return false;
-    return typeof dirty.has === 'function' ? dirty.has(key) : dirty.indexOf(key) >= 0;
-  }
-
   // Which versions start checked. A stored selection decides; with none (a key
   // tested for the first time) every version on the key is checked, since
   // those are the versions the user chose to add over at api.bible.
@@ -54,13 +49,14 @@
 
   // What an incoming settings change is allowed to repaint. `changed` is the
   // list of keys that actually moved (omit it for the initial fill, which
-  // predates any edit). A field the user has edited since the last Save
-  // outranks the change: their unsaved work is not overwritten. Rebuilding the
-  // checkbox list rebuilds the default <select> with it, so a relist waits on
-  // an edited default too, and never asks for a separate reselect.
+  // predates any edit); `dirty` is the Set of keys the user has edited since
+  // the last Save. A field the user has edited outranks the change: their
+  // unsaved work is not overwritten. Rebuilding the checkbox list rebuilds the
+  // default <select> with it, so a relist waits on an edited default too, and
+  // never asks for a separate reselect.
   function fillPlan({ fieldKeys, changed, dirty }) {
     const initial = !changed;
-    const dirtyKey = (k) => !initial && isDirty(dirty, k);
+    const dirtyKey = (k) => !initial && !!dirty && dirty.has(k);
     const inScope = (k) => initial || changed.indexOf(k) >= 0;
     const wants = (k) => inScope(k) && !dirtyKey(k);
 
@@ -306,4 +302,4 @@
   }
 
   init();
-})(typeof window !== 'undefined' ? window : globalThis);
+})(typeof globalThis !== 'undefined' ? globalThis : this);
