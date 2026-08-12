@@ -146,6 +146,13 @@ is **placed** against the page each time it mounts. Every other view
 and comes back there. Exactly one of the two applies to any view, which is what
 keeps scroll-sync and scroll-restore from writing the same body.
 
+A reader who doesn't want the panel moving on its own turns **scroll-sync**
+off (the `scrollSync` setting, on by default). That is not a milder follow: it
+removes the page as a driver entirely — no tracking, no re-alignment — so
+there is no page-synced view left and Translation becomes scroll-owning like
+the rest. Where the user puts the panel is where it stays, including across a
+trip to Citations and back.
+
 **Placement**:
 Putting a view's body at its starting scroll position at the moment it mounts,
 as opposed to *moving* an already-visible body. Placement is instant: a body

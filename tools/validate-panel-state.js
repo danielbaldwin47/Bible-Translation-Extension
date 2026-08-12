@@ -204,10 +204,22 @@ eq(P.viewRestoresScroll('talk'), true, 'the talk reader owns its scroll position
 eq(P.viewRestoresScroll('translation'), false, 'translation is page-driven, so it does not restore');
 eq(P.viewRestoresScroll(null), true, 'an unknown view defaults to owning its scroll');
 
+// With scroll-sync switched off there is no page-driven view at all: nothing
+// else is going to place the Translation body, so it must save and restore its
+// own offset like every other view.
+eq(P.viewRestoresScroll('translation', false), true, 'sync off -> translation owns its scroll too');
+eq(P.viewRestoresScroll('translation', true), false, 'sync on -> translation is page-driven again');
+eq(P.viewRestoresScroll('citations', false), true, 'sync off changes nothing for citations');
+
 v = P.createViews();
 show(v, 'translation', 'john/3::niv');
 P.saveViewScroll(v, 500);
 eq(v.entries.translation.scrollTop, 0, 'a page-synced view records no offset to come back to');
+
+v = P.createViews();
+show(v, 'translation', 'john/3::niv');
+P.saveViewScroll(v, 500, false);
+eq(v.entries.translation.scrollTop, 500, 'with sync off it records where the user left it');
 
 v = P.createViews();
 show(v, 'citations', 'john/3::source');
@@ -217,6 +229,24 @@ P.saveViewScroll(v, 800); // the page-synced view's own scroll must not leak
 r = show(v, 'citations', 'john/3::source');
 eq(r.action, 'restore', 'citations still re-mounts across a translation detour');
 eq(r.entry.scrollTop, 500, '...at its own saved offset, untouched by scroll-sync');
+
+// ---- When scroll-sync runs at all ----
+// Four inputs, all of which can move independently; the panel re-asserts this
+// predicate after each of them and nowhere else.
+console.log('wantsScrollSync:');
+const syncable = { visible: true, scrollSync: true };
+eq(P.wantsScrollSync(fresh(), syncable), true, 'a visible, expanded Translation view syncs');
+eq(P.wantsScrollSync(fresh(), { visible: false, scrollSync: true }), false, 'a hidden panel does not sync');
+eq(P.wantsScrollSync(fresh({ collapsed: true }), syncable), false, 'a collapsed panel does not sync');
+eq(P.wantsScrollSync(fresh({ mode: 'citations' }), syncable), false, 'citations mode does not sync');
+eq(P.wantsScrollSync(fresh(), { visible: true, scrollSync: false }), false, 'the setting switches it off outright');
+const nonBible = fresh();
+nonBible.isBible = false;
+eq(P.wantsScrollSync(nonBible, syncable), false, 'a non-Bible chapter is citations, so it does not sync');
+// Defensive: a missing flag must not read as "on" for visibility, nor as "off"
+// for the setting (the panel asks before its first settings read resolves).
+eq(P.wantsScrollSync(fresh(), {}), false, 'no visibility means no sync');
+eq(P.wantsScrollSync(fresh(), { visible: true }), true, 'an unknown setting reads as its default (on)');
 
 // ---- Damped scroll step ----
 // The body eases toward a target instead of teleporting. Frame-rate
