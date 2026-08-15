@@ -423,7 +423,7 @@
   // The settings this panel handles by itself when they change. Exposed as
   // panel.HANDLED_KEYS so the orchestrator can skip its full re-render for a
   // change touching only these — one list, no mirror to drift.
-  const PANEL_HANDLED_KEYS = ['sidebarWidth', 'citationView', 'showCitationToggle', 'citationSourceMark', 'panelMode', 'panelCollapsed', 'scrollSync'];
+  const PANEL_HANDLED_KEYS = ['sidebarWidth', 'fontScale', 'citationView', 'showCitationToggle', 'citationSourceMark', 'panelMode', 'panelCollapsed', 'scrollSync'];
 
   let ui = null; // refs once built
   const cbs = {}; // event handlers set by init()
@@ -579,6 +579,19 @@
     ui.rootEl.setAttribute('data-btx-source-mark', mark === 'chip' ? 'chip' : 'strip');
   }
 
+  // The reader's text-size multiplier. It is a *second* variable rather than a
+  // pre-multiplied size because theme.js owns --btx-size and rewrites it
+  // whenever the site's own font-size changes: the two compose in CSS
+  // (--btx-body-size), so neither write can clobber the other and a theme
+  // re-apply that captured the same site size still writes nothing.
+  function applyFontScale(scale) {
+    // Through the module's own normalizer, not a second clamp here: a bad value
+    // would otherwise reach the CSS var and take the whole body's font-size
+    // down with it (unlike clampWidth, which exists for raw drag pixels).
+    const safe = SETTINGS().normalize({ fontScale: scale }).fontScale;
+    ui.rootEl.style.setProperty('--btx-size-scale', String(safe));
+  }
+
   function persist(partial) {
     try { SETTINGS().patch(partial); } catch (e) { /* storage unavailable — state still applied */ }
   }
@@ -644,6 +657,7 @@
   // the mounted content stale, triggers a re-render.
   function onSettingsChange({ next, changed, own }) {
     if (changed.includes('sidebarWidth')) applyWidth(next.sidebarWidth);
+    if (changed.includes('fontScale')) applyFontScale(next.fontScale);
     if (changed.includes('showCitationToggle')) applyCitToggleVisible(next.showCitationToggle);
     if (changed.includes('citationSourceMark')) applyCitSourceMark(next.citationSourceMark);
     if (own) return;
@@ -687,6 +701,7 @@
     state = createState({ mode: s.panelMode, citationView: s.citationView, collapsed: s.panelCollapsed });
     scrollSync = s.scrollSync; // before applyModeUI: it asserts the sync predicate
     applyWidth(s.sidebarWidth);
+    applyFontScale(s.fontScale);
     applyCitToggleVisible(s.showCitationToggle);
     applyCitSourceMark(s.citationSourceMark);
     applyModeUI();

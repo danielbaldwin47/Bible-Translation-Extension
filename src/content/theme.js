@@ -100,6 +100,7 @@
       dominantTextStyle,
       VAR_KEYS,
       sameVars,
+      lineHeightOf, // hoisted from the DOM half below: pure, and load-bearing
     };
   }
   if (typeof document === 'undefined') return; // Node: pure policy only
@@ -117,8 +118,15 @@
 
   // A computed line-height the panel can use: `normal` is not a number we can
   // hand to CSS custom properties meaningfully, so it becomes our own default.
+  // The mirrored line-height, always as an absolute length. Chrome resolves a
+  // set line-height to px already; `normal` is the one case that doesn't, and
+  // it is stated in px here off the element's own size so the panel never has
+  // to ask which kind of value it holds — the panel's text-size multiplier
+  // scales it, and scaling a ratio would apply the multiplier twice.
   function lineHeightOf(cs) {
-    return cs.lineHeight && cs.lineHeight !== 'normal' ? cs.lineHeight : '1.6';
+    if (cs.lineHeight && cs.lineHeight !== 'normal') return cs.lineHeight;
+    const px = parseFloat(cs.fontSize);
+    return Number.isFinite(px) ? `${Math.round(px * 1.6 * 100) / 100}px` : '27.2px';
   }
 
   // Find the element that holds the scripture text, using stable-ish hooks with
@@ -252,7 +260,7 @@
       headerH: captureHeaderHeight(),
       font: text.font || 'Georgia, serif',
       size: text.size || '17px',
-      line: text.line || '1.6',
+      line: text.line || '27.2px', // 17px × 1.6, stated as a length like every other line value
       dark,
     };
   }

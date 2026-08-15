@@ -95,6 +95,8 @@
     scrollSync: $('scrollSync'),
     sidebarWidth: $('sidebarWidth'),
     sidebarWidthOut: $('sidebarWidthOut'),
+    fontScale: $('fontScale'),
+    fontScaleOut: $('fontScaleOut'),
     save: $('save'),
     saveStatus: $('saveStatus'),
   };
@@ -209,6 +211,8 @@
     renderTranslations(preferredDefaultId());
   }
 
+  const pct = (v) => Math.round(Number(v) * 100) + '%';
+
   // The single-value settings this form edits, each paired with the control
   // that shows it. One table, so Save and the live refresh below can't
   // disagree about which control holds which setting. The translation list is
@@ -227,6 +231,14 @@
       node: els.sidebarWidth,
       read: () => els.sidebarWidth.value,
       write: (v) => { els.sidebarWidth.value = String(v); els.sidebarWidthOut.textContent = v + 'px'; },
+    },
+    {
+      key: 'fontScale',
+      node: els.fontScale,
+      // Stored as a multiplier, shown as a percentage — the slider walks the
+      // multiplier so the module's clamp/step is the only rule about it.
+      read: () => els.fontScale.value,
+      write: (v) => { els.fontScale.value = String(v); els.fontScaleOut.textContent = pct(v); },
     },
   ];
   const FIELD_KEYS = FIELDS.map((f) => f.key);
@@ -271,6 +283,9 @@
     // used to hardcode 280/900 can't drift apart.
     els.sidebarWidth.min = String(SETTINGS.SIDEBAR_WIDTH_MIN);
     els.sidebarWidth.max = String(SETTINGS.SIDEBAR_WIDTH_MAX);
+    els.fontScale.min = String(SETTINGS.FONT_SCALE_MIN);
+    els.fontScale.max = String(SETTINGS.FONT_SCALE_MAX);
+    els.fontScale.step = String(SETTINGS.FONT_SCALE_STEP);
     fillForm();
 
     for (const f of FIELDS) {
@@ -291,6 +306,9 @@
 
     els.sidebarWidth.addEventListener('input', () => {
       els.sidebarWidthOut.textContent = els.sidebarWidth.value + 'px';
+    });
+    els.fontScale.addEventListener('input', () => {
+      els.fontScaleOut.textContent = pct(els.fontScale.value);
     });
 
     els.toggleKey.addEventListener('click', () => {
