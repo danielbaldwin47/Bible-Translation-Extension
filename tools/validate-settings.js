@@ -65,11 +65,11 @@ for (const bad of ['VERSE', 'by-verse', '', 0, null, {}, undefined]) {
 
 // ---- normalize: citationSourceMark (chip vs. coloured group edge) ----
 console.log('normalize (citationSourceMark):');
-eq(S.defaults().citationSourceMark, 'chip', 'citationSourceMark defaults to "chip"');
-eq(S.normalize({ citationSourceMark: 'strip' }).citationSourceMark, 'strip', 'citationSourceMark "strip" survives');
+eq(S.defaults().citationSourceMark, 'strip', 'citationSourceMark defaults to "strip"');
+eq(S.normalize({ citationSourceMark: 'chip' }).citationSourceMark, 'chip', 'citationSourceMark "chip" survives');
 for (const bad of ['CHIP', 'edge', '', 0, null, {}, undefined]) {
-  eq(S.normalize({ citationSourceMark: bad }).citationSourceMark, 'chip',
-    `citationSourceMark ${JSON.stringify(bad)} falls back to "chip"`);
+  eq(S.normalize({ citationSourceMark: bad }).citationSourceMark, 'strip',
+    `citationSourceMark ${JSON.stringify(bad)} falls back to "strip"`);
 }
 
 // ---- normalize: panelMode (the panel's persisted mode preference) ----

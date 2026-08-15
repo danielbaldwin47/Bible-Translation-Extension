@@ -173,7 +173,7 @@ validators — go there before changing behaviour.
   otherwise the observer loops. `resolveReadingColumn` is widest-first,
   `resolveReadingContainer` narrowest-first, on purpose. `content.js` only
   calls `refresh()` after `showChapter`.
-- **Citation source marking** (`citationSourceMark`: `chip` | `strip`) is pure
+- **Citation source marking** (`citationSourceMark`: `strip` default | `chip`) is pure
   CSS off `#btx-root[data-btx-source-mark]`; hue set once per `btx-tag-*` /
   `btx-grp-*` (`--btx-src`). Panel-handled, never a re-render.
 - **Reader scroll targets by corpus** live in `CORPUS_PLANS`
