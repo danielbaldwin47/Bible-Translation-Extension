@@ -134,7 +134,7 @@ The part of `__BTX.panel` that mounts views: it holds one cached body per view
 name, remembers where each view was scrolled, invalidates them
 all on a new chapter, and is the only writer of the panel body's scroll
 position. Callers name a view and say how to build it (`showView`) or ask for a
-node to be scrolled into sight (`scrollTo`); no module outside the panel holds
+node to be scrolled into sight (`scrollIntoView`); no module outside the panel holds
 panel DOM.
 
 **Page-synced view**:
