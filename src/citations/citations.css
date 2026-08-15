@@ -22,7 +22,7 @@
  *
  * Which chip carries the source-type colour is a setting (data-btx-source-mark
  * on the root, from `citationSourceMark`): 'chip' shows the acronym tile,
- * 'strip' hides it and puts a hue rule on the source-type group's left edge —
+ * 'strip' (the default) hides it and puts a hue rule on the source-type group's left edge —
  * see "Source marking" below. Everything else is identical in both.
  */
 #btx-root {
@@ -166,14 +166,16 @@
 #btx-root .btx-cit-vgroup.btx-cit-focus { outline: 2px solid var(--btx-accent); }
 
 /* Shared summary styling (custom caret, native marker hidden). Both headers
-   share one right padding so the count chip lines up with the acronym tile on
-   the entries below — don't reintroduce an inset on the nested header. */
+   end at --btx-cit-edge so the count chip shares a right edge with the tile
+   (or range chip) on the entries below — entries are inset by the same value
+   (margin + padding, see .btx-cit). Don't reintroduce a nested-header inset. */
+#btx-root { --btx-cit-edge: 17px; }
 #btx-root summary.btx-cit-vhead,
 #btx-root summary.btx-cit-chead {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 9px 8px 11px;
+  padding: 8px var(--btx-cit-edge) 8px 11px;
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -220,14 +222,13 @@
 }
 #btx-root summary.btx-cit-chead:hover { background: var(--btx-border); }
 /* Inner padding makes each entry read as one unit; the bottom margin separates
-   adjacent entries. */
-#btx-root .btx-cit-cgroup > .btx-cit { margin: 0 9px 4px; }
-
+   adjacent entries. Horizontal margin + padding = --btx-cit-edge, whether the
+   entry sits directly under a verse/source card or inside a nested cgroup. */
 #btx-root .btx-cit {
   padding: 9px 11px 10px;
   border-radius: 8px;
   cursor: pointer;
-  margin-bottom: 4px;
+  margin: 0 calc(var(--btx-cit-edge) - 11px) 4px;
   transition: background 0.12s;
 }
 #btx-root .btx-cit:hover { background: var(--btx-border); }
@@ -307,7 +308,7 @@
 
 /* ---- Source marking (data-btx-source-mark on the root, from settings) ----
    'chip': the acronym tile is shown, and the sub/snippet lines reserve its
-   column so the tiles keep one true right edge. 'strip': the tile is hidden,
+   column so the tiles keep one true right edge. 'strip' (default): the tile is hidden,
    the text reclaims that width, and whichever <details> represents a source
    type (.btx-cit-cgroup in by-verse, .btx-cit-vgroup in by-source — cit-panel
    puts btx-grp-* on both) carries a 3px hue rule on its left edge. On a
@@ -317,6 +318,9 @@
 #btx-root[data-btx-source-mark='chip'] .btx-cit-snippet { padding-right: 34px; }
 
 #btx-root[data-btx-source-mark='strip'] .btx-cit-tag { display: none; }
+/* With no tile, the range chip takes its place at the right edge so the entry
+   head still ends on a chip aligned under the group count. */
+#btx-root[data-btx-source-mark='strip'] .btx-cit-range { margin-left: auto; }
 #btx-root[data-btx-source-mark='strip'] .btx-cit-vgroup.btx-grp-gc,
 #btx-root[data-btx-source-mark='strip'] .btx-cit-vgroup.btx-grp-jod,
 #btx-root[data-btx-source-mark='strip'] .btx-cit-vgroup.btx-grp-tpjs,

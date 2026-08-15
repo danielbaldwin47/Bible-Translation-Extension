@@ -95,7 +95,7 @@
     // How a citation row shows its source type: 'chip' = an acronym tile (GC /
     // JoD / JS) at the right of each row; 'strip' = no tile, the source-type
     // group carries a coloured left edge instead and the text reclaims the width.
-    citationSourceMark: { def: 'chip', norm: oneOf(['chip', 'strip'], 'chip') },
+    citationSourceMark: { def: 'strip', norm: oneOf(['chip', 'strip'], 'strip') },
     // Let the page's scroll move the Translation panel. Off means the panel
     // never scrolls on its own — no tracking, no eased re-alignment; where the
     // user puts it is where it stays.

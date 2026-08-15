@@ -455,7 +455,7 @@
     rootEl.id = 'btx-root';
     rootEl.setAttribute('data-btx-theme', 'light');
     rootEl.setAttribute('data-btx-mode', 'translation');
-    rootEl.setAttribute('data-btx-source-mark', 'chip');
+    rootEl.setAttribute('data-btx-source-mark', 'strip');
 
     const panel = el('div', 'btx-panel');
     const header = el('div', 'btx-header');
@@ -576,7 +576,7 @@
   // coloured group edge). Pure CSS off the root attribute — the citation DOM
   // carries both hooks whichever is chosen, so no re-render.
   function applyCitSourceMark(mark) {
-    ui.rootEl.setAttribute('data-btx-source-mark', mark === 'strip' ? 'strip' : 'chip');
+    ui.rootEl.setAttribute('data-btx-source-mark', mark === 'chip' ? 'chip' : 'strip');
   }
 
   function persist(partial) {

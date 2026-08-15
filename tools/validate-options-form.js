@@ -109,7 +109,9 @@ eq(Object.keys(F).sort(), ['fillPlan', 'initialChecks', 'pickDefaultId', 'transl
 // past bug broke, not a spelling.
 console.log('Wiring:');
 const fs = require('fs');
-const src = fs.readFileSync(path.join(ROOT, 'src/options/options.js'), 'utf8');
+// Normalise line endings: a Windows checkout (autocrlf) hands us CRLF and the
+// body regex below anchors on LF.
+const src = fs.readFileSync(path.join(ROOT, 'src/options/options.js'), 'utf8').replace(/\r\n/g, '\n');
 check(/Object\.assign\(partial, translationPatch\(/.test(src),
   'Save routes the translation list through translationPatch (never writes the two keys directly)');
 const refreshBody = (src.match(/function refreshDefaultOptions[\s\S]*?\n {2}}\n/) || [''])[0];
