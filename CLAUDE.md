@@ -136,7 +136,7 @@ validators — go there before changing behaviour.
   `sidebarWidth`) has one owner in the reader, `__BTX.panel`, persisted via
   `__BTX.settings`. `panel.HANDLED_KEYS` lists what the panel handles itself
   (incl. read-only `scrollSync`, `citationSourceMark`, `showCitationToggle`,
-  `fontScale`);
+  and `fontScale`, which the header's stepper also writes);
   `content.js` reads that list — its subscriber skips changes touching only
   those keys, and the panel fires `renderMode` when an external write stales
   its content. The old `chrome.storage.local` `btxPanelMode`/`btxPanelCollapsed`

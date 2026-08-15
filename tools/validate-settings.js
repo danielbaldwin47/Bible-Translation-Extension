@@ -378,6 +378,13 @@ check(/#btx-root \.btx-title \{[^}]*min-width: 0/.test(panelCss),
   'the title can shrink so the controls always fit');
 check(/#btx-root \.btx-select \{[^}]*min-width:/.test(panelCss),
   'the translation select shrinks to a floor rather than overflowing the header');
+// The buttons themselves are rigid, so the control box's floor is its own
+// content. `min-width: 0` here would remove that floor and let the box shrink
+// *past* its buttons, spilling them off the panel's right edge instead of
+// stopping the layout.
+const controlsRule = /#btx-root \.btx-controls \{[^}]*\}/.exec(panelCss);
+check(controlsRule && !/min-width: 0/.test(controlsRule[0]),
+  'the header controls keep a min-content floor, so the buttons cannot spill out of the panel');
 const contentSrc = fs.readFileSync(path.join(ROOT, 'src/content/content.js'), 'utf8');
 check(/PANEL_KEYS = panel\.HANDLED_KEYS/.test(contentSrc),
   'content.js takes the panel-handled key list from the panel (no second copy)');

@@ -98,10 +98,12 @@
 
 /* The header holds the chapter title plus every control (translation select,
    text-size stepper, gear, collapse, close) on one row. It must not wrap or
-   overflow at the minimum panel width (280px), so nothing in it is rigid: the
-   title yields first (it already ellipses), then the select down to a width
-   that still shows a translation abbreviation. The buttons never shrink —
-   a half-width tap target is worse than a short title. */
+   overflow at the minimum panel width (280px), so it yields in a fixed order:
+   the title first (it already ellipses), then the select, down to a width that
+   still shows a translation abbreviation. The buttons never shrink — a
+   half-width tap target is worse than a short title — and .btx-controls keeps
+   its default min-width (min-content) so the box can never shrink past them
+   and spill its buttons off the panel's right edge. */
 #btx-root .btx-header {
   display: flex;
   align-items: center;
@@ -128,14 +130,13 @@
 #btx-root .btx-controls {
   display: flex;
   align-items: center;
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 1 auto;               /* min-width stays auto: the floor is its content */
   gap: 4px;
 }
 
 #btx-root .btx-select {
   flex: 0 1 auto;
-  min-width: 44px;              /* still shows an abbreviation at 280px */
+  min-width: 64px;              /* still shows an abbreviation at 280px */
   max-width: 130px;
   font-family: inherit;
   font-size: 13px;
@@ -176,8 +177,7 @@
 #btx-root .btx-font-step {
   font-size: 12px;
   font-weight: 600;
-  padding: 4px 4px;
-  letter-spacing: 0;
+  padding: 4px;
 }
 #btx-root .btx-font-larger { font-size: 15px; }
 /* Spent end of the range: visibly out of moves rather than silently inert. */

@@ -628,6 +628,7 @@
     fontScale = safe; // the applied value, and what the header steps from
     ui.rootEl.style.setProperty('--btx-size-scale', String(safe));
     applyFontStepUI();
+    return safe; // so a caller persists what was applied, not what it asked for
   }
 
   // The grid the header's stepper walks. Read from the settings module every
@@ -644,6 +645,13 @@
     const bounds = fontScaleBounds();
     ui.smaller.disabled = stepFontScale(fontScale, -1, bounds) === null;
     ui.larger.disabled = stepFontScale(fontScale, 1, bounds) === null;
+    // The last step in a direction disables the very button that was just
+    // pressed. A disabled element drops focus to the document, stranding a
+    // keyboard user mid-adjustment, so hand focus to the other end of the
+    // stepper — which is by definition still live, since the two ends cannot
+    // both be spent.
+    if (document.activeElement === ui.smaller && ui.smaller.disabled) ui.larger.focus();
+    else if (document.activeElement === ui.larger && ui.larger.disabled) ui.smaller.focus();
   }
 
   function persist(partial) {
@@ -670,16 +678,18 @@
     requestRender();
   }
 
-  // A− / A+. Applied first so the text resizes on the click, then persisted:
-  // the write is a normal settings patch, so it carries the panel's own-write
-  // tag (onSettingsChange skips re-applying it) and an open options form adopts
-  // the new value through its own subscription. Body text only — nothing here
-  // re-renders, the CSS vars do the work.
+  // A− / A+. Applied first so the text resizes on the click, then persisted —
+  // and what is persisted is what applyFontScale actually applied, so a raw
+  // step can never be stored as a value the CSS never showed. The write is a
+  // normal settings patch: it carries the panel's own-write tag, and an open
+  // options form adopts the new value through its own subscription. The echo
+  // re-applies the same scale (fontScale sits above onSettingsChange's `own`
+  // guard, with width and the other pure-appearance keys), which is a no-op.
+  // Body text only — nothing here re-renders, the CSS vars do the work.
   function onFontStep(dir) {
     const next = stepFontScale(fontScale, dir, fontScaleBounds());
     if (next === null) return; // spent end: no write, no echo
-    applyFontScale(next);
-    persist({ fontScale: fontScale }); // the applied (normalized) value, not the raw step
+    persist({ fontScale: applyFontScale(next) });
   }
 
   function setCollapsed(collapsed) {
