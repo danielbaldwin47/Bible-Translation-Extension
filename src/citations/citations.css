@@ -5,38 +5,44 @@
  */
 
 /* ---- Chip family ----
- * The three small right-side chips (count, verse-range badge, corpus tag) get
- * their geometry from these values, so they read as one family and adjusting
- * the family is one edit rather than three. They must size themselves: the
- * panel body inherits the site's line-height, and Chrome resolves that to an
- * absolute px (~27px at the default 17px/1.6), which then inherits verbatim
- * into every descendant regardless of its own font size — an 11px chip in a
- * 27px line box is the tall rectangle these values exist to prevent. The
- * mirrored line-height stays correct for body text; only the chips opt out.
+ * The three small right-side chips (group count, verse-range badge, source
+ * acronym) are one 26px tile family — one height, one radius, one neutral
+ * surface — so a count on a group header and the acronym on the entries under
+ * it share a right-hand edge down the panel, which is what makes the column
+ * read as structure. They must size themselves: the panel body inherits the
+ * site's line-height, and Chrome resolves that to an absolute px (~27px at the
+ * default 17px/1.6), which then inherits verbatim into every descendant
+ * regardless of its own font size — an 11px chip in a 27px line box is the
+ * tall rectangle these values exist to prevent. The mirrored line-height stays
+ * correct for body text; only the chips opt out.
  *
  * The sizes are fixed rather than scaled off --btx-size on purpose: the chips
  * are panel chrome, not body text, and a count that grew with the reader's
  * font setting would crowd the verse label it sits beside.
+ *
+ * Which chip carries the source-type colour is a setting (data-btx-source-mark
+ * on the root, from `citationSourceMark`): 'chip' shows the acronym tile,
+ * 'strip' hides it and puts a hue rule on the source-type group's left edge —
+ * see "Source marking" below. Everything else is identical in both.
  */
 #btx-root {
-  --btx-chip-h: 20px;
-  --btx-chip-pad: 6px;
-  --btx-chip-pad-tight: 2px;    /* the count chip: min-width sets its width, so it needs only clearance */
-  --btx-chip-radius: 6px;
-  --btx-chip-font-size: 11px;
+  --btx-chip-h: 26px;
+  --btx-chip-radius: 7px;
 }
 #btx-root .btx-cit-count,
 #btx-root .btx-cit-range,
 #btx-root .btx-cit-tag {
   flex: 0 0 auto;
+  box-sizing: border-box;
+  min-width: var(--btx-chip-h);
+  height: var(--btx-chip-h);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: var(--btx-chip-h);
   line-height: 1;
-  padding: 0 var(--btx-chip-pad);
+  border: 0;
   border-radius: var(--btx-chip-radius);
-  font-size: var(--btx-chip-font-size);
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -159,12 +165,15 @@
 }
 #btx-root .btx-cit-vgroup.btx-cit-focus { outline: 2px solid var(--btx-accent); }
 
-/* Shared summary styling (custom caret, native marker hidden) */
+/* Shared summary styling (custom caret, native marker hidden). Both headers
+   share one right padding so the count chip lines up with the acronym tile on
+   the entries below — don't reintroduce an inset on the nested header. */
 #btx-root summary.btx-cit-vhead,
 #btx-root summary.btx-cit-chead {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
+  padding: 8px 9px 8px 11px;
   cursor: pointer;
   list-style: none;
   user-select: none;
@@ -172,9 +181,9 @@
 #btx-root summary.btx-cit-vhead::-webkit-details-marker,
 #btx-root summary.btx-cit-chead::-webkit-details-marker { display: none; }
 #btx-root summary.btx-cit-vhead {
-  padding: 8px 10px;
   font-weight: 700;
   font-size: 13.5px;
+  letter-spacing: -0.006em;
 }
 #btx-root summary.btx-cit-vhead:hover { background: var(--btx-border); }
 
@@ -184,53 +193,38 @@
   border-left: 5px solid currentColor;
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
-  opacity: 0.6;
+  opacity: 0.45;
   transition: transform 0.12s;
 }
 #btx-root details[open] > summary > .btx-caret { transform: rotate(90deg); }
 
 #btx-root .btx-cit-label { flex: 1 1 auto; }
-/* Count chip (verse + source-type): subtle bordered box, geometry from the chip
-   family above. min-width matches the family height, so 1 and 2 digits both
-   render as the same square box (the tight padding is what keeps two digits
-   inside it); a 3-digit count outgrows the min-width and grows in width only. */
+/* Count chip (verse + source-type): neutral tile on the panel's quiet plane
+   (--btx-border already flips per theme and is the row-hover surface). One and
+   two digits both fit the 26px square; a 3-digit count grows in width only.
+   The source-type tint it used to carry is gone: the acronym (or the strip)
+   holds the colour now — two tinted objects per row was the noise removed. */
 #btx-root .btx-cit-count {
-  min-width: var(--btx-chip-h);
-  padding: 0 var(--btx-chip-pad-tight);
-  font-weight: 600;
+  font-size: 11px;
   color: var(--btx-muted);
-  background: transparent;
-  border: 1px solid var(--btx-border);
-}
-/* Source-type chips get a faint tint matching their tag color as a glance cue. */
-#btx-root .btx-cit-count.btx-grp-gc {
-  background: color-mix(in srgb, #006184 28%, transparent);
-  border-color: color-mix(in srgb, #006184 52%, transparent);
-}
-#btx-root .btx-cit-count.btx-grp-jod {
-  background: color-mix(in srgb, #7a5230 30%, transparent);
-  border-color: color-mix(in srgb, #7a5230 54%, transparent);
-}
-#btx-root .btx-cit-count.btx-grp-tpjs {
-  background: color-mix(in srgb, #4a5d23 30%, transparent);
-  border-color: color-mix(in srgb, #4a5d23 54%, transparent);
+  background: var(--btx-border);
+  padding: 0 5px;
 }
 
 /* Source-type sub-dropdown inside a verse */
-#btx-root .btx-cit-cgroup { border-top: 1px solid var(--btx-border); }
+#btx-root .btx-cit-cgroup { border-top: 1px solid var(--btx-border); padding: 6px 0 8px; }
 #btx-root summary.btx-cit-chead {
-  padding: 6px 22px 6px 16px;  /* extra right pad insets the chip vs. the verse row */
   font-size: 12.5px;
   font-weight: 600;
   color: var(--btx-fg);
 }
 #btx-root summary.btx-cit-chead:hover { background: var(--btx-border); }
 /* Inner padding makes each entry read as one unit; the bottom margin separates
-   adjacent entries (the snippet line-height is tightened so entries stay compact). */
-#btx-root .btx-cit-cgroup > .btx-cit { margin: 2px 8px 10px; }
+   adjacent entries. */
+#btx-root .btx-cit-cgroup > .btx-cit { margin: 0 9px 4px; }
 
 #btx-root .btx-cit {
-  padding: 8px;
+  padding: 9px 11px 10px;
   border-radius: 8px;
   cursor: pointer;
   margin-bottom: 4px;
@@ -238,11 +232,12 @@
 }
 #btx-root .btx-cit:hover { background: var(--btx-border); }
 #btx-root .btx-cit:focus-visible { outline: 2px solid var(--btx-accent); }
-#btx-root .btx-cit-head { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
-#btx-root .btx-cit-headl { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; }
+#btx-root .btx-cit-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+#btx-root .btx-cit-headl { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
 #btx-root .btx-cit-speaker {
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: 14px;
+  letter-spacing: -0.008em;
   line-height: 1.25;
   min-width: 0;
   overflow: hidden;
@@ -251,30 +246,84 @@
 }
 /* Verse/range label on a spanning (or source-view) entry, e.g. "vv. 3–10". */
 #btx-root .btx-cit-range {
-  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.014em;
   color: var(--btx-muted);
-  border: 1px solid var(--btx-border);
+  background: var(--btx-border);
+  padding: 0 8px;
 }
+/* Source acronym tile. The hue is set once per tag class (--btx-src) and
+   consumed here: light theme is the hue at full strength on a faint wash, dark
+   theme a stronger wash under a desaturated tint (--btx-src-fg). GC / JoD / JS
+   each hold the same 26px square — JoD is the only 3-glyph value, so it gets
+   its own size + tracking rather than a wider tile. A 4-glyph acronym would
+   need its own rule beside .btx-tag-J; never truncate, never vary the width. */
 #btx-root .btx-cit-tag {
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  color: #fff;
+  font-size: 11px;
+  letter-spacing: 0.045em;
+  color: var(--btx-src);
+  background: color-mix(in srgb, var(--btx-src) 14%, transparent);
 }
-#btx-root .btx-tag-G, #btx-root .btx-tag-E { background: #006184; }
-#btx-root .btx-tag-J { background: #7a5230; }
-#btx-root .btx-tag-T { background: #4a5d23; }
-#btx-root .btx-cit-sub { font-size: 12px; color: var(--btx-muted); margin-top: 2px; line-height: 1.3; }
-/* Snippets are clamped so long quotes don't swamp the list (full text in the reader). */
+#btx-root .btx-cit-tag.btx-tag-J { font-size: 9.5px; letter-spacing: -0.015em; }
+#btx-root[data-btx-theme='dark'] .btx-cit-tag {
+  color: var(--btx-src-fg);
+  background: color-mix(in srgb, var(--btx-src) var(--btx-src-tint), transparent);
+}
+/* Source hues — one place, keyed both by corpus tag (the acronym tile) and by
+   group key (the strip), so both markings draw the same colour. */
+#btx-root .btx-cit-tag.btx-tag-G,
+#btx-root .btx-cit-tag.btx-tag-E,
+#btx-root .btx-grp-gc   { --btx-src: #006184; --btx-src-fg: #a3c0ca; --btx-src-tint: 32%; }
+#btx-root .btx-cit-tag.btx-tag-J,
+#btx-root .btx-grp-jod  { --btx-src: #7a5230; --btx-src-fg: #c9a883; --btx-src-tint: 26%; }
+#btx-root .btx-cit-tag.btx-tag-T,
+#btx-root .btx-grp-tpjs { --btx-src: #4a5d23; --btx-src-fg: #a9bd83; --btx-src-tint: 30%; }
+
+#btx-root .btx-cit-sub {
+  font-size: 11.5px;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+  color: var(--btx-muted);
+  margin-top: 7px;
+}
+/* Snippets are clamped so long quotes don't swamp the list (full text in the
+   reader). Set roman, not italic: a clamped 3-line italic run was the least
+   readable text in the panel. The hairline top rule separates the quote from
+   the metadata without spending vertical space on it. */
 #btx-root .btx-cit-snippet {
-  font-size: 12.5px;
-  margin-top: 3px;
-  opacity: 0.9;
-  font-style: italic;
-  line-height: 1.3;
+  font-size: 13px;
+  line-height: 1.6;
+  font-style: normal;
+  color: color-mix(in srgb, var(--btx-fg) 85%, transparent);
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid color-mix(in srgb, var(--btx-border) 60%, transparent);
+  text-wrap: pretty;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* ---- Source marking (data-btx-source-mark on the root, from settings) ----
+   'chip': the acronym tile is shown, and the sub/snippet lines reserve its
+   column so the tiles keep one true right edge. 'strip': the tile is hidden,
+   the text reclaims that width, and whichever <details> represents a source
+   type (.btx-cit-cgroup in by-verse, .btx-cit-vgroup in by-source — cit-panel
+   puts btx-grp-* on both) carries a 3px hue rule on its left edge. On a
+   .btx-cit-vgroup the card's overflow:hidden clips it to the radius; on a
+   nested .btx-cit-cgroup it reads as a flush full-height rule — intended. */
+#btx-root[data-btx-source-mark='chip'] .btx-cit-sub,
+#btx-root[data-btx-source-mark='chip'] .btx-cit-snippet { padding-right: 34px; }
+
+#btx-root[data-btx-source-mark='strip'] .btx-cit-tag { display: none; }
+#btx-root[data-btx-source-mark='strip'] .btx-cit-vgroup.btx-grp-gc,
+#btx-root[data-btx-source-mark='strip'] .btx-cit-vgroup.btx-grp-jod,
+#btx-root[data-btx-source-mark='strip'] .btx-cit-vgroup.btx-grp-tpjs,
+#btx-root[data-btx-source-mark='strip'] .btx-cit-cgroup.btx-grp-gc,
+#btx-root[data-btx-source-mark='strip'] .btx-cit-cgroup.btx-grp-jod,
+#btx-root[data-btx-source-mark='strip'] .btx-cit-cgroup.btx-grp-tpjs {
+  border-left: 3px solid color-mix(in srgb, var(--btx-src) 90%, transparent);
 }
 
 /* ---- Inline talk reader ---- */

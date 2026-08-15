@@ -90,6 +90,7 @@
     actOnNonEngOnly: $('actOnNonEngOnly'),
     scrollToSnippet: $('scrollToSnippet'),
     citationView: $('citationView'),
+    citationSourceMark: $('citationSourceMark'),
     showCitationToggle: $('showCitationToggle'),
     scrollSync: $('scrollSync'),
     sidebarWidth: $('sidebarWidth'),
@@ -218,6 +219,7 @@
     { key: 'actOnNonEngOnly', node: els.actOnNonEngOnly, read: () => els.actOnNonEngOnly.checked, write: (v) => { els.actOnNonEngOnly.checked = v; } },
     { key: 'scrollToSnippet', node: els.scrollToSnippet, read: () => els.scrollToSnippet.checked, write: (v) => { els.scrollToSnippet.checked = v; } },
     { key: 'citationView', node: els.citationView, read: () => els.citationView.value, write: (v) => { els.citationView.value = v; } },
+    { key: 'citationSourceMark', node: els.citationSourceMark, read: () => els.citationSourceMark.value, write: (v) => { els.citationSourceMark.value = v; } },
     { key: 'showCitationToggle', node: els.showCitationToggle, read: () => els.showCitationToggle.checked, write: (v) => { els.showCitationToggle.checked = v; } },
     { key: 'scrollSync', node: els.scrollSync, read: () => els.scrollSync.checked, write: (v) => { els.scrollSync.checked = v; } },
     {

@@ -31,7 +31,7 @@ console.log('Schema:');
 const KEYS = [
   'apiKey', 'provider', 'enabledTranslations', 'defaultTranslationId',
   'actOnNonEngOnly', 'sidebarWidth', 'scrollToSnippet', 'citationView',
-  'showCitationToggle', 'panelMode', 'panelCollapsed', 'scrollSync',
+  'showCitationToggle', 'citationSourceMark', 'panelMode', 'panelCollapsed', 'scrollSync',
 ];
 check(Array.isArray(S.KEYS), 'exports KEYS');
 eq(S.KEYS.slice().sort(), KEYS.slice().sort(), 'KEYS covers exactly the known settings');
@@ -61,6 +61,15 @@ eq(S.normalize({ citationView: 'source' }).citationView, 'source', 'citationView
 for (const bad of ['VERSE', 'by-verse', '', 0, null, {}, undefined]) {
   eq(S.normalize({ citationView: bad }).citationView, 'source',
     `citationView ${JSON.stringify(bad)} falls back to "source"`);
+}
+
+// ---- normalize: citationSourceMark (chip vs. coloured group edge) ----
+console.log('normalize (citationSourceMark):');
+eq(S.defaults().citationSourceMark, 'chip', 'citationSourceMark defaults to "chip"');
+eq(S.normalize({ citationSourceMark: 'strip' }).citationSourceMark, 'strip', 'citationSourceMark "strip" survives');
+for (const bad of ['CHIP', 'edge', '', 0, null, {}, undefined]) {
+  eq(S.normalize({ citationSourceMark: bad }).citationSourceMark, 'chip',
+    `citationSourceMark ${JSON.stringify(bad)} falls back to "chip"`);
 }
 
 // ---- normalize: panelMode (the panel's persisted mode preference) ----
@@ -296,6 +305,8 @@ check(/HANDLED_KEYS: PANEL_HANDLED_KEYS/.test(panelSrc),
   'panel.js exposes its handled-settings list as panel.HANDLED_KEYS');
 check(/PANEL_HANDLED_KEYS = \[[^\]]*'citationView'/.test(panelSrc),
   'the citation layout is a panel-handled setting');
+check(/PANEL_HANDLED_KEYS = \[[^\]]*'citationSourceMark'/.test(panelSrc),
+  'the citation source marking is a panel-handled setting (pure CSS, no re-render)');
 const contentSrc = fs.readFileSync(path.join(ROOT, 'src/content/content.js'), 'utf8');
 check(/PANEL_KEYS = panel\.HANDLED_KEYS/.test(contentSrc),
   'content.js takes the panel-handled key list from the panel (no second copy)');

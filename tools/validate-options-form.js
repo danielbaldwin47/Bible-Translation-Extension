@@ -126,7 +126,7 @@ check(/fillPlan\(/.test(src), 'the live refresh asks fillPlan what to repaint');
 const fieldsTable = (src.match(/const FIELDS = \[[\s\S]*?\n {2}\];/) || [''])[0];
 check(fieldsTable, 'FIELDS is still one literal table in the shell');
 const html = fs.readFileSync(path.join(ROOT, 'src/options/options.html'), 'utf8');
-for (const key of ['scrollSync', 'scrollToSnippet', 'actOnNonEngOnly', 'showCitationToggle', 'sidebarWidth']) {
+for (const key of ['scrollSync', 'scrollToSnippet', 'actOnNonEngOnly', 'showCitationToggle', 'citationSourceMark', 'sidebarWidth']) {
   check(new RegExp(`key: '${key}'`).test(fieldsTable), `${key} is a FIELDS row (so Save writes it and fillForm repaints it)`);
   check(new RegExp(`id="${key}"`).test(html), `${key} has a control on the options page`);
 }

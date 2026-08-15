@@ -423,7 +423,7 @@
   // The settings this panel handles by itself when they change. Exposed as
   // panel.HANDLED_KEYS so the orchestrator can skip its full re-render for a
   // change touching only these — one list, no mirror to drift.
-  const PANEL_HANDLED_KEYS = ['sidebarWidth', 'citationView', 'showCitationToggle', 'panelMode', 'panelCollapsed', 'scrollSync'];
+  const PANEL_HANDLED_KEYS = ['sidebarWidth', 'citationView', 'showCitationToggle', 'citationSourceMark', 'panelMode', 'panelCollapsed', 'scrollSync'];
 
   let ui = null; // refs once built
   const cbs = {}; // event handlers set by init()
@@ -455,6 +455,7 @@
     rootEl.id = 'btx-root';
     rootEl.setAttribute('data-btx-theme', 'light');
     rootEl.setAttribute('data-btx-mode', 'translation');
+    rootEl.setAttribute('data-btx-source-mark', 'chip');
 
     const panel = el('div', 'btx-panel');
     const header = el('div', 'btx-header');
@@ -571,6 +572,13 @@
     ui.rootEl.classList.toggle('btx-cit-toggle-off', on === false);
   }
 
+  // Settings: how a citation row marks its source type (acronym chip vs. a
+  // coloured group edge). Pure CSS off the root attribute — the citation DOM
+  // carries both hooks whichever is chosen, so no re-render.
+  function applyCitSourceMark(mark) {
+    ui.rootEl.setAttribute('data-btx-source-mark', mark === 'strip' ? 'strip' : 'chip');
+  }
+
   function persist(partial) {
     try { SETTINGS().patch(partial); } catch (e) { /* storage unavailable — state still applied */ }
   }
@@ -637,6 +645,7 @@
   function onSettingsChange({ next, changed, own }) {
     if (changed.includes('sidebarWidth')) applyWidth(next.sidebarWidth);
     if (changed.includes('showCitationToggle')) applyCitToggleVisible(next.showCitationToggle);
+    if (changed.includes('citationSourceMark')) applyCitSourceMark(next.citationSourceMark);
     if (own) return;
     // When the same write also moved a key the panel doesn't handle, the
     // orchestrator's own settings subscriber will do a full re-render — firing
@@ -679,6 +688,7 @@
     scrollSync = s.scrollSync; // before applyModeUI: it asserts the sync predicate
     applyWidth(s.sidebarWidth);
     applyCitToggleVisible(s.showCitationToggle);
+    applyCitSourceMark(s.citationSourceMark);
     applyModeUI();
     applyCitationViewUI();
     applyCollapsedUI();

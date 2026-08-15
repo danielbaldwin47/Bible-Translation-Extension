@@ -29,7 +29,8 @@
   }
 
   // A <summary> with a custom caret, a label, and a right-aligned count chip.
-  // countClass optionally tints the chip per source type (btx-grp-gc/jod/tpjs).
+  // countClass (btx-grp-gc/jod/tpjs) names the source type on the chip; the
+  // colour itself now lives on the acronym tile or the group strip, not here.
   function summaryRow(cls, group) {
     const sum = el('summary', cls);
     sum.appendChild(el('span', 'btx-caret'));
@@ -60,18 +61,26 @@
     return node;
   }
 
+  // Whichever <details> represents a *source type* — the nested group in the
+  // by-verse layout, the top-level one in by-source — carries its group key as
+  // a class too, so the coloured-edge source marking (data-btx-source-mark=
+  // 'strip' on the root) has a hook regardless of layout.
+  function groupClass(base, group) {
+    return group.kind === 'sourceType' ? base + ' btx-grp-' + group.key : base;
+  }
+
   // One top-level group: a <details> per verse (by-verse) or per source type
   // (by-source). Nested source-type groups are <details> too; by-source rows
   // hang in a plain container instead.
   function groupEl(group, onOpenTalk) {
-    const node = el('details', 'btx-cit-vgroup');
+    const node = el('details', groupClass('btx-cit-vgroup', group));
     node.dataset.btxUid = group.uid;
     node.appendChild(summaryRow('btx-cit-vhead', group));
     node.open = group.open;
     if (group.focus) node.classList.add('btx-cit-focus');
 
     for (const child of group.children) {
-      const cnode = el('details', 'btx-cit-cgroup');
+      const cnode = el('details', groupClass('btx-cit-cgroup', child));
       cnode.dataset.btxUid = child.uid;
       cnode.appendChild(summaryRow('btx-cit-chead', child));
       cnode.open = child.open;
