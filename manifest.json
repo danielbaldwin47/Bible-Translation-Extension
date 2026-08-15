@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Translations & Citations for Gospel Library",
-  "version": "1.3.0",
+  "version": "0.1.0",
   "description": "Compare Bible translations and see which General Conference talks, Journal of Discourses sermons, and Joseph Smith teachings cite each verse — in a side panel that blends into the Gospel Library reader.",
   "permissions": ["storage"],
   "host_permissions": [

@@ -52,7 +52,7 @@ One line per module: global name + what it owns. Each file's header comment is
 its interface doc — read that before its body.
 
 ```
-manifest.json              MV3 (v1.3.0); content_scripts order matters
+manifest.json              MV3 (v0.1.0); content_scripts order matters
 src/
   shared/constants.js      __BTX.const     message types, storage keys, API bases, limits
   shared/settings.js       __BTX.settings  THE owner of synced `btxSettings`: schema, one normalizer per key, get/patch/replace, subscribe({next,prev,changed,own})

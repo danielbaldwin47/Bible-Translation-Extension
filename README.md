@@ -8,6 +8,8 @@ book, the **General Conference talks, Journal of Discourses sermons, and Teachin
 of Joseph Smith that cite each verse** — all in a side panel that blends into the
 Gospel Library reader.
 
+**Current version: 0.1.0** — see [CHANGELOG.md](CHANGELOG.md).
+
 The panel mirrors the site's light/dark/sepia theme, font, and text size, follows
 you as you navigate between chapters, scrolls along with the page, and is resizable.
 
@@ -17,12 +19,16 @@ you as you navigate between chapters, scrolls along with the page, and is resiza
   and **Citations** (all books). On non-Bible books only Citations shows.
 - **Translation** — auto-detects the chapter and loads it in your chosen version;
   one at a time, switchable from a dropdown; scrolls proportionally with the page.
-- **Citations** — a tidy accordion: each **verse** is a collapsible dropdown (with
-  its citation count), and inside it the talks are grouped by source type —
-  **General Conference**, **Journal of Discourses**, **Teachings of the Prophet
-  Joseph Smith** — newest first, each with a context snippet.
-- **Open sources inline** — clicking a citation opens the talk in the panel,
-  scrolled to the cited paragraph: modern General Conference is fetched live from
+- **Citations** — two layouts, switchable from the panel or the options page:
+  **by verse** (each verse a collapsible dropdown with its citation count, talks
+  inside grouped by source type — **General Conference**, **Journal of
+  Discourses**, **Teachings of the Prophet Joseph Smith** — newest first, each with
+  a context snippet) or **by source** (each talk listed once, grouped by type).
+  Sources are marked either with an acronym chip (GC / JoD / JS) or a coloured
+  edge on the group — your pick on the options page. A filter box narrows the
+  list and restores your open/closed state when cleared.
+- **Open sources inline** — clicking a citation opens the talk in the panel with
+  the cited passage revealed in context (not pinned to the top): modern General Conference is fetched live from
   churchofjesuschrist.org (with a subtle "Open full talk ↗" link in the header);
   Journal of Discourses / pre-1971 conference / Joseph Smith come from bundled
   offline text.
@@ -106,34 +112,48 @@ content script  ──messages──►  service worker  ──fetch──►  a
 
 ## Project layout
 
+Every JS file is an IIFE attaching to the single global `__BTX.<name>`; the
+header comment of each file is its interface doc.
+
 | Path | Purpose |
 |------|---------|
-| `manifest.json` | MV3 manifest |
-| `src/shared/constants.js` | message types, storage keys, limits, defaults (incl. panel width) |
+| `manifest.json` | MV3 manifest (content-script order matters) |
+| `src/shared/constants.js` | message types, storage keys, API bases, limits |
+| `src/shared/settings.js` | the one owner of synced settings: schema, defaults, normalizers, get/patch/replace, change subscriptions |
 | `src/shared/books.js` | LDS-slug maps: 66 Bible (→ USFM/name) + Book of Mormon / D&C / PGP |
 | `src/background/service-worker.js` | message router |
 | `src/background/api.js` | api.bible + bible-api.com fetch + normalization |
 | `src/background/cache.js` | chapter/bibles cache (chrome.storage.local) |
 | `src/background/ratelimit.js` | 15/30s + daily request limiting |
 | `src/content/detect.js` | chapter detection (all standard works) + SPA navigation |
-| `src/content/theme.js` | theme/font mirroring |
+| `src/content/page-hook.js` | page-world history patch |
+| `src/content/theme.js` | theme/font mirroring, incl. live re-align on site theme/font-size changes |
 | `src/content/sanitize.js` | safe IR → DOM renderer |
-| `src/content/panel.js` | panel UI, scroll-sync, width + drag-resize |
-| `src/content/content.js` | orchestrator |
-| `src/citations/cit-panel.js` | citations accordion (verse → source type → talks) |
+| `src/content/panel.js` | panel state + persistence, DOM, scroll-sync, drag-resize, and the view host that caches views |
+| `src/content/content.js` | orchestrator: detect → worker/citations → panel content |
+| `src/citations/cit-data.js` | loads shards / sources / gzipped talks |
+| `src/citations/cit-view-model.js` | pure citation view-model: ordering, grouping, counts, labels, filter plan |
+| `src/citations/cit-panel.js` | DOM adapter over the view-model |
+| `src/citations/talk-source.js` | where a talk's text comes from per corpus, and where to scroll in it |
 | `src/citations/talk-view.js` | inline talk reader + sanitizer |
 | `src/citations/highlights.js` | local select-to-highlight in the reader |
-| `src/options/` | settings page |
+| `src/citations/data/` | generated citation bundle (committed) |
+| `src/options/` | settings page (Translations / Citations / Panel cards) |
 | `tools/build-citation-data.js` | builds `src/citations/data/` from the BYU DBs |
-| `tools/validate-books.js`, `tools/validate-citations.js` | sanity checks (run with `node`) |
+| `tools/validate-*.js`, `tools/test-talk-source.js` | Node checks, no deps (each names the module it covers) |
 | `tools/make-icons.js` | regenerates the icon PNGs |
+| `CLAUDE.md`, `CONTEXT.md`, `docs/adr/` | agent guidance, domain vocabulary, architecture decisions |
 
 ## Development
 
 ```bash
-node tools/validate-books.js   # verify the book map + manifest file refs
-node tools/make-icons.js       # regenerate icons/*.png
+for f in tools/validate-*.js; do node "$f"; done   # all module checks
+node --test tools/test-talk-source.js                # talk-source seam tests
+node tools/make-icons.js                             # regenerate icons/*.png
 ```
+
+No dependencies to install — the checks are plain Node scripts against each
+module's pure core (`module.exports`).
 
 After editing files, reload the extension at `chrome://extensions` (and reload the
 Gospel Library tab) to pick up changes.
