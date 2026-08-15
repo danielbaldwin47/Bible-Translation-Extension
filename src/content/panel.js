@@ -114,6 +114,24 @@
     return effectiveMode(s) !== before;
   }
 
+  // A text-size step (the header's A− / A+ buttons), along the grid the
+  // settings module defines: `bounds` is { min, max, step } read from
+  // __BTX.settings, which stays the single owner of the clamp — this walks the
+  // bounds it is handed and never invents its own. Returns null when the step
+  // changes nothing (already at that end, no direction, no usable scale), which
+  // is what disables the button *and* what keeps a spent click from writing a
+  // setting that would normalize straight back to the value already stored.
+  // The result is rounded because a 0.1 grid in floats is not exact (0.7 + 0.1
+  // = 0.7999999999999999) and a value that differs from the same number written
+  // by the options slider would register as a change that never happened.
+  function stepFontScale(scale, dir, bounds) {
+    if (!Number.isFinite(scale) || !Number.isFinite(dir) || dir === 0) return null;
+    const { min, max, step } = bounds;
+    const moved = Number((scale + dir * step).toFixed(4));
+    const next = Math.max(min, Math.min(max, moved));
+    return next === scale ? null : next;
+  }
+
   // ---- Pure view-host core (Node-testable) --------------------------------
   // A *view* is a named body of panel content: 'translation', 'citations',
   // 'talk'. The host keeps at most one cached body per name, tagged with a
@@ -400,6 +418,7 @@
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
       createState, effectiveMode, selectMode, selectCitationView, setBible,
+      stepFontScale,
       createViews, saveViewScroll, selectView, keepView, settleView, dropViews,
       viewRestoresScroll, wantsScrollSync,
       scrollStep, easeRamp, floorStep, carryScroll, realignmentDone, isForeignScroll,
@@ -437,6 +456,11 @@
   // from pageScrollBound below, which is the mechanism the setting switches:
   // whether the window listener is attached right now.
   let scrollSync = true;
+  // The body-text multiplier currently applied, always a normalized value (it
+  // is written by applyFontScale, never assigned raw). The header's stepper
+  // steps from this rather than re-reading storage, so a click is instant and
+  // the disabled ends match what is on screen.
+  let fontScale = 1;
   let pageScrollBound = false;
   let scrollFadeTimer = null;
 
@@ -463,6 +487,14 @@
     const select = el('select', 'btx-select');
     select.title = 'Choose translation';
 
+    // Text-size stepper. Two buttons rather than the options page's slider
+    // because the size is read-and-adjust: the reader is looking at the text
+    // while stepping it. Both write the same setting the slider does.
+    const smaller = el('button', 'btx-btn btx-font-step', 'A−');
+    smaller.title = 'Smaller text';
+    const larger = el('button', 'btx-btn btx-font-step btx-font-larger', 'A+');
+    larger.title = 'Larger text';
+
     const gear = el('button', 'btx-btn btx-gear', '⚙');
     gear.title = 'Settings';
     const collapse = el('button', 'btx-btn btx-collapse', '»');
@@ -472,6 +504,8 @@
 
     const controls = el('div', 'btx-controls');
     controls.appendChild(select);
+    controls.appendChild(smaller);
+    controls.appendChild(larger);
     controls.appendChild(gear);
     controls.appendChild(collapse);
     controls.appendChild(close);
@@ -522,6 +556,8 @@
 
     // Wire controls.
     select.addEventListener('change', () => cbs.onTranslationChange && cbs.onTranslationChange(select.value));
+    smaller.addEventListener('click', () => onFontStep(-1));
+    larger.addEventListener('click', () => onFontStep(1));
     gear.addEventListener('click', () => cbs.onGear && cbs.onGear());
     close.addEventListener('click', () => cbs.onClose && cbs.onClose());
     collapse.addEventListener('click', () => setCollapsed(true));
@@ -539,7 +575,7 @@
       scrollFadeTimer = setTimeout(() => body.classList.remove('btx-scrolling'), 1000);
     }, { passive: true });
 
-    ui = { rootEl, panel, header, title, select, modes, modeTranslation, modeCitations, citModes, citViewSource, citViewVerse, body, footer, tab, resize };
+    ui = { rootEl, panel, header, title, select, smaller, larger, modes, modeTranslation, modeCitations, citModes, citViewSource, citViewVerse, body, footer, tab, resize };
     return ui;
   }
 
@@ -589,7 +625,25 @@
     // would otherwise reach the CSS var and take the whole body's font-size
     // down with it (unlike clampWidth, which exists for raw drag pixels).
     const safe = SETTINGS().normalize({ fontScale: scale }).fontScale;
+    fontScale = safe; // the applied value, and what the header steps from
     ui.rootEl.style.setProperty('--btx-size-scale', String(safe));
+    applyFontStepUI();
+  }
+
+  // The grid the header's stepper walks. Read from the settings module every
+  // time rather than captured, so the bounds have exactly one owner.
+  function fontScaleBounds() {
+    const S = SETTINGS();
+    return { min: S.FONT_SCALE_MIN, max: S.FONT_SCALE_MAX, step: S.FONT_SCALE_STEP };
+  }
+
+  // A stepper button is spent when its direction would change nothing — the
+  // same rule that decides where a click lands, so the disabled state cannot
+  // disagree with what a click would do.
+  function applyFontStepUI() {
+    const bounds = fontScaleBounds();
+    ui.smaller.disabled = stepFontScale(fontScale, -1, bounds) === null;
+    ui.larger.disabled = stepFontScale(fontScale, 1, bounds) === null;
   }
 
   function persist(partial) {
@@ -614,6 +668,18 @@
     applyCitationViewUI();
     persist({ citationView: state.citationView });
     requestRender();
+  }
+
+  // A− / A+. Applied first so the text resizes on the click, then persisted:
+  // the write is a normal settings patch, so it carries the panel's own-write
+  // tag (onSettingsChange skips re-applying it) and an open options form adopts
+  // the new value through its own subscription. Body text only — nothing here
+  // re-renders, the CSS vars do the work.
+  function onFontStep(dir) {
+    const next = stepFontScale(fontScale, dir, fontScaleBounds());
+    if (next === null) return; // spent end: no write, no echo
+    applyFontScale(next);
+    persist({ fontScale: fontScale }); // the applied (normalized) value, not the raw step
   }
 
   function setCollapsed(collapsed) {
