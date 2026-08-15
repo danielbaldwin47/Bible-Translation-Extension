@@ -19,7 +19,19 @@
   --btx-fg: #2a2a2a;
   --btx-font: Georgia, 'Times New Roman', serif;
   --btx-size: 17px;
-  --btx-line: 1.6;
+  --btx-line: 27.2px;           /* a length, never a ratio — see --btx-body-line */
+  /* The reader's own text-size multiplier (`fontScale`), written by panel.js.
+     theme.js keeps owning --btx-size/--btx-line (the site's size); the two are
+     composed here, so a theme re-apply and a scale change never overwrite each
+     other. Body text reads --btx-body-size / --btx-body-line; panel chrome
+     (header, toggles, chips, footer) keeps its fixed px and does not scale.
+     --btx-line is always an absolute length (theme.js's lineHeightOf states
+     even `normal` in px), so it has to scale with the text or the lines
+     collide at 1.6x — a ratio would scale itself and apply the multiplier
+     twice, which is why this default is 17px × 1.6 rather than 1.6. */
+  --btx-size-scale: 1;
+  --btx-body-size: calc(var(--btx-size) * var(--btx-size-scale));
+  --btx-body-line: calc(var(--btx-line) * var(--btx-size-scale));
   --btx-border: rgba(0, 0, 0, 0.12);
   --btx-muted: rgba(0, 0, 0, 0.55);
   --btx-accent: #006184;
@@ -157,8 +169,8 @@
   flex: 1 1 auto;
   overflow-y: auto;
   padding: var(--btx-body-pad-top) var(--btx-body-pad-x) 18px;
-  font-size: var(--btx-size);
-  line-height: var(--btx-line);
+  font-size: var(--btx-body-size);
+  line-height: var(--btx-body-line);
   scrollbar-width: thin;        /* Firefox */
   scrollbar-color: transparent transparent;
 }

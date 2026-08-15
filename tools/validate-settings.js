@@ -30,7 +30,7 @@ function eq(actual, expected, msg) {
 console.log('Schema:');
 const KEYS = [
   'apiKey', 'provider', 'enabledTranslations', 'defaultTranslationId',
-  'actOnNonEngOnly', 'sidebarWidth', 'scrollToSnippet', 'citationView',
+  'actOnNonEngOnly', 'sidebarWidth', 'fontScale', 'scrollToSnippet', 'citationView',
   'showCitationToggle', 'citationSourceMark', 'panelMode', 'panelCollapsed', 'scrollSync',
 ];
 check(Array.isArray(S.KEYS), 'exports KEYS');
@@ -117,6 +117,28 @@ for (const bad of ['wide', NaN, Infinity, null, {}]) {
 }
 check(S.SIDEBAR_WIDTH_MIN === 280 && S.SIDEBAR_WIDTH_MAX === 900,
   'width bounds match the panel clamp + options slider (280–900)');
+
+// ---- normalize: fontScale (the reader's body-text multiplier) ----
+console.log('normalize (fontScale):');
+eq(S.defaults().fontScale, 1, 'fontScale defaults to 1 (exactly the site size)');
+eq(S.normalize({ fontScale: 1.2 }).fontScale, 1.2, 'an on-grid scale survives');
+eq(S.normalize({ fontScale: '1.2' }).fontScale, 1.2, 'a numeric string scale is coerced');
+eq(S.normalize({ fontScale: 1.23 }).fontScale, 1.2, 'an off-grid scale snaps to the step');
+eq(S.normalize({ fontScale: 0.1 }).fontScale, S.FONT_SCALE_MIN, 'scale clamps up to the min');
+eq(S.normalize({ fontScale: 9 }).fontScale, S.FONT_SCALE_MAX, 'scale clamps down to the max');
+for (const bad of ['big', NaN, Infinity, null, {}, true, '']) {
+  eq(S.normalize({ fontScale: bad }).fontScale, 1, `fontScale ${String(bad)} falls back to 1`);
+}
+check(S.FONT_SCALE_MIN === 0.7 && S.FONT_SCALE_MAX === 1.6 && S.FONT_SCALE_STEP === 0.1,
+  'font-scale bounds match the options slider (0.7–1.6, step 0.1)');
+// Float dust would make the same value written by two contexts diff as a
+// change — every reachable step has to normalize to itself.
+for (let n = S.FONT_SCALE_MIN; n <= S.FONT_SCALE_MAX + 1e-9; n += S.FONT_SCALE_STEP) {
+  const once = S.normalize({ fontScale: n }).fontScale;
+  eq(S.normalize({ fontScale: once }).fontScale, once, `fontScale ${once} is a fixed point`);
+  eq(S.diff({ fontScale: n }, { fontScale: once }), [], `fontScale ${once} does not diff against itself`);
+}
+eq(S.defaults().fontScale, S.normalize({ fontScale: 1 }).fontScale, 'the default sits on the step grid');
 
 // ---- normalize: strings / provider / translations ----
 console.log('normalize (strings, provider, translations):');
@@ -307,6 +329,27 @@ check(/PANEL_HANDLED_KEYS = \[[^\]]*'citationView'/.test(panelSrc),
   'the citation layout is a panel-handled setting');
 check(/PANEL_HANDLED_KEYS = \[[^\]]*'citationSourceMark'/.test(panelSrc),
   'the citation source marking is a panel-handled setting (pure CSS, no re-render)');
+check(/PANEL_HANDLED_KEYS = \[[^\]]*'fontScale'/.test(panelSrc),
+  'the body text-size multiplier is a panel-handled setting (a CSS var, no re-render)');
+check(/setProperty\('--btx-size-scale'/.test(panelSrc),
+  'panel.js applies fontScale as --btx-size-scale');
+
+// The multiplier is a second variable *beside* the size theme.js mirrors, so a
+// theme re-apply and a scale change can't overwrite one another (an apply that
+// writes nothing is what keeps the reading-column observer from looping).
+const panelCss = fs.readFileSync(path.join(ROOT, 'src/content/panel.css'), 'utf8');
+check(/--btx-body-size:\s*calc\(var\(--btx-size\) \* var\(--btx-size-scale\)\)/.test(panelCss),
+  'the panel composes the mirrored size with the multiplier in CSS');
+check(/#btx-root \.btx-body \{[^}]*font-size: var\(--btx-body-size\)/.test(panelCss),
+  'the panel body reads the composed size, not the raw mirrored one');
+const citCss = fs.readFileSync(path.join(ROOT, 'src/citations/citations.css'), 'utf8');
+check(/\.btx-talk \{[^}]*var\(--btx-body-size\)/.test(citCss),
+  'the talk reader reads the composed size too');
+// Chips are chrome: they must never pick the multiplier up.
+for (const chip of ['btx-cit-count', 'btx-cit-range', 'btx-cit-tag']) {
+  const rule = new RegExp(`\\.${chip} \\{[^}]*\\}`).exec(citCss);
+  check(rule && !/--btx-size-scale/.test(rule[0]), `${chip} stays fixed-size chrome`);
+}
 const contentSrc = fs.readFileSync(path.join(ROOT, 'src/content/content.js'), 'utf8');
 check(/PANEL_KEYS = panel\.HANDLED_KEYS/.test(contentSrc),
   'content.js takes the panel-handled key list from the panel (no second copy)');

@@ -135,7 +135,8 @@ validators — go there before changing behaviour.
 - **Panel state** (`panelMode`, `panelCollapsed`, `citationView`,
   `sidebarWidth`) has one owner in the reader, `__BTX.panel`, persisted via
   `__BTX.settings`. `panel.HANDLED_KEYS` lists what the panel handles itself
-  (incl. read-only `scrollSync`, `citationSourceMark`, `showCitationToggle`);
+  (incl. read-only `scrollSync`, `citationSourceMark`, `showCitationToggle`,
+  `fontScale`);
   `content.js` reads that list — its subscriber skips changes touching only
   those keys, and the panel fires `renderMode` when an external write stales
   its content. The old `chrome.storage.local` `btxPanelMode`/`btxPanelCollapsed`
@@ -173,6 +174,16 @@ validators — go there before changing behaviour.
   otherwise the observer loops. `resolveReadingColumn` is widest-first,
   `resolveReadingContainer` narrowest-first, on purpose. `content.js` only
   calls `refresh()` after `showChapter`.
+- **Body text size** has two owners that compose in CSS: `theme.mirror` writes
+  `--btx-size`/`--btx-line` (the site's size), the panel writes
+  `--btx-size-scale` from `fontScale`, and `panel.css` multiplies them into
+  `--btx-body-size`/`--btx-body-line`. Only body text reads those — chips,
+  toolbars, header and footer stay fixed px, and the citation list's designed
+  size ladder scales off the multiplier alone, not off the site. Panel-handled,
+  never a re-render; the clamp and step are `__BTX.settings`' normalizer
+  (`applyFontScale` calls `normalize`, it does not re-clamp).
+  `--btx-line` is **always a length** — `theme.lineHeightOf` states even
+  `normal` in px — because multiplying a ratio would apply the scale twice.
 - **Citation source marking** (`citationSourceMark`: `strip` default | `chip`) is pure
   CSS off `#btx-root[data-btx-source-mark]`; hue set once per `btx-tag-*` /
   `btx-grp-*` (`--btx-src`). Panel-handled, never a re-render.

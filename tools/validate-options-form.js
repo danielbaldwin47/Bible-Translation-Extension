@@ -128,11 +128,20 @@ check(/fillPlan\(/.test(src), 'the live refresh asks fillPlan what to repaint');
 const fieldsTable = (src.match(/const FIELDS = \[[\s\S]*?\n {2}\];/) || [''])[0];
 check(fieldsTable, 'FIELDS is still one literal table in the shell');
 const html = fs.readFileSync(path.join(ROOT, 'src/options/options.html'), 'utf8');
-for (const key of ['scrollSync', 'scrollToSnippet', 'actOnNonEngOnly', 'showCitationToggle', 'citationSourceMark', 'sidebarWidth']) {
+for (const key of ['scrollSync', 'scrollToSnippet', 'actOnNonEngOnly', 'showCitationToggle', 'citationSourceMark', 'sidebarWidth', 'fontScale']) {
   check(new RegExp(`key: '${key}'`).test(fieldsTable), `${key} is a FIELDS row (so Save writes it and fillForm repaints it)`);
   check(new RegExp(`id="${key}"`).test(html), `${key} has a control on the options page`);
 }
 check(/id="panelCard"[\s\S]*id="scrollSync"/.test(html), 'the scroll-sync checkbox sits in the Panel card');
+check(/id="panelCard"[\s\S]*id="fontScale"/.test(html), 'the text-size slider sits in the Panel card');
+// Both sliders take their range from the settings module, so the bounds live in
+// exactly one place.
+check(!/id="fontScale"[^>]*\b(min|max|step)=/.test(html),
+  'the text-size slider does not hardcode its range (set from the settings module)');
+check(/els\.fontScale\.min = String\(SETTINGS\.FONT_SCALE_MIN\)/.test(src)
+  && /els\.fontScale\.max = String\(SETTINGS\.FONT_SCALE_MAX\)/.test(src)
+  && /els\.fontScale\.step = String\(SETTINGS\.FONT_SCALE_STEP\)/.test(src),
+  'the text-size slider range comes from the settings module at init');
 
 if (failures) {
   console.error(`\n${failures} check(s) failed.`);

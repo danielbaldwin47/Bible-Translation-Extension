@@ -4,6 +4,15 @@ High-level only. Mechanism lives in module headers, `CONTEXT.md`, and
 `docs/adr/`. Versions are the extension's own numbering (`manifest.json`),
 starting fresh at 0.x for the first tagged release.
 
+## Unreleased
+
+- **Panel text size** (Panel card): a 70–160% multiplier on the panel's reading
+  text — translation, citation list, talk reader. It multiplies the size
+  mirrored from the site, so the site's own font-size slider still applies.
+  Chips, toggles and the header keep their fixed size.
+- Line-height is now mirrored from the site as a length in every case, so the
+  panel's leading tracks its text size instead of compounding with it.
+
 ## 0.1.0 — 2026-08-15
 
 Architecture pass over the whole extension plus a batch of panel polish.

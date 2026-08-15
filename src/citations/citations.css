@@ -16,9 +16,10 @@
  * tall rectangle these values exist to prevent. The mirrored line-height stays
  * correct for body text; only the chips opt out.
  *
- * The sizes are fixed rather than scaled off --btx-size on purpose: the chips
- * are panel chrome, not body text, and a count that grew with the reader's
- * font setting would crowd the verse label it sits beside.
+ * The sizes are fixed rather than scaled off --btx-size (or the reader's
+ * --btx-size-scale multiplier) on purpose: the chips are panel chrome, not
+ * body text, and a count that grew with the reader's font setting would crowd
+ * the verse label it sits beside.
  *
  * Which chip carries the source-type colour is a setting (data-btx-source-mark
  * on the root, from `citationSourceMark`): 'chip' shows the acronym tile,
@@ -182,9 +183,18 @@
 }
 #btx-root summary.btx-cit-vhead::-webkit-details-marker,
 #btx-root summary.btx-cit-chead::-webkit-details-marker { display: none; }
+/* ---- What the reader's text-size multiplier moves ----
+ * The list's *text* — the two group labels, the speaker line, the metadata
+ * line and the snippet — scales with --btx-size-scale (see panel.css). It is
+ * written as calc() off the designed px rather than as an em chain, because
+ * these sizes are a designed ladder (14 / 13.5 / 12.5 / 11.5), not multiples
+ * of one base, and an em chain would compound them against each other.
+ * Everything else in the list is chrome and stays fixed: the chip family, the
+ * filter toolbar, the summary count and the talk-reader's sticky header.
+ */
 #btx-root summary.btx-cit-vhead {
   font-weight: 700;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--btx-size-scale));
   letter-spacing: -0.006em;
 }
 #btx-root summary.btx-cit-vhead:hover { background: var(--btx-border); }
@@ -216,7 +226,7 @@
 /* Source-type sub-dropdown inside a verse */
 #btx-root .btx-cit-cgroup { border-top: 1px solid var(--btx-border); padding: 6px 0 8px; }
 #btx-root summary.btx-cit-chead {
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--btx-size-scale));
   font-weight: 600;
   color: var(--btx-fg);
 }
@@ -237,7 +247,7 @@
 #btx-root .btx-cit-headl { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
 #btx-root .btx-cit-speaker {
   font-weight: 600;
-  font-size: 14px;
+  font-size: calc(14px * var(--btx-size-scale));
   letter-spacing: -0.008em;
   line-height: 1.25;
   min-width: 0;
@@ -281,7 +291,7 @@
 #btx-root .btx-grp-tpjs { --btx-src: #4a5d23; --btx-src-fg: #a9bd83; --btx-src-tint: 30%; }
 
 #btx-root .btx-cit-sub {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--btx-size-scale));
   line-height: 1.45;
   letter-spacing: 0.01em;
   color: var(--btx-muted);
@@ -292,7 +302,7 @@
    readable text in the panel. The hairline top rule separates the quote from
    the metadata without spending vertical space on it. */
 #btx-root .btx-cit-snippet {
-  font-size: 13px;
+  font-size: calc(13px * var(--btx-size-scale));
   line-height: 1.6;
   font-style: normal;
   color: color-mix(in srgb, var(--btx-fg) 85%, transparent);
@@ -374,7 +384,7 @@
 }
 #btx-root .btx-talk-title { font-weight: 700; font-size: 14px; }
 #btx-root .btx-talk-sub { font-size: 12px; color: var(--btx-muted); }
-#btx-root .btx-talk { font-size: var(--btx-size); line-height: var(--btx-line); }
+#btx-root .btx-talk { font-size: var(--btx-body-size); line-height: var(--btx-body-line); }
 #btx-root .btx-talk p { margin: 0 0 0.7em; }
 #btx-root .btx-talk h1, #btx-root .btx-talk h2, #btx-root .btx-talk h3 { font-size: 1em; font-weight: 700; margin: 1em 0 0.4em; }
 #btx-root .btx-cit-highlight {

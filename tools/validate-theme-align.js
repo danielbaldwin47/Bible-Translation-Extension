@@ -142,6 +142,20 @@ for (const key of T.VAR_KEYS) {
 }
 check(T.sameVars(vars, Object.assign(copy(), { unmirrored: 'x' })), 'a field the panel does not mirror does not force a write');
 
+// ---- line-height is mirrored as a length ----
+// The panel multiplies --btx-line by the reader's text-size setting. A ratio
+// already scales itself off the (already scaled) font-size, so a unitless value
+// here would apply the multiplier twice — 2.56em leading at 1.6x.
+console.log('lineHeightOf:');
+const lh = (line, size) => T.lineHeightOf({ lineHeight: line, fontSize: size });
+eq(lh('27.2px', '17px'), '27.2px', 'a resolved line-height is mirrored as-is');
+eq(lh('normal', '17px'), '27.2px', '`normal` is stated in px off the element\'s own size');
+eq(lh('normal', '20px'), '32px', '`normal` tracks the element it was read from');
+eq(lh('', ''), '27.2px', 'an unreadable style still yields a length');
+for (const line of ['27.2px', 'normal', '', undefined]) {
+  check(/px$/.test(lh(line, '17px')), `lineHeightOf(${JSON.stringify(line)}) is a length, never a ratio`);
+}
+
 if (failures) {
   console.error(`\n${failures} check(s) failed.`);
   process.exit(1);

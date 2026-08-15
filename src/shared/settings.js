@@ -30,6 +30,15 @@
   const SIDEBAR_WIDTH_MAX = 900;
   const SIDEBAR_WIDTH_DEFAULT = 380;
 
+  // Body text-size multiplier bounds — the one source of truth; the options
+  // slider reads them. 1 means "exactly the size the site is showing"; the
+  // range is deliberately narrow, since the base size is already the reader's
+  // own site setting, not a fixed default.
+  const FONT_SCALE_MIN = 0.7;
+  const FONT_SCALE_MAX = 1.6;
+  const FONT_SCALE_STEP = 0.1;
+  const FONT_SCALE_DEFAULT = 1;
+
   // ---- Per-setting normalizers -------------------------------------------
   // Each takes the raw stored value and returns a valid one. They are total:
   // any garbage (missing, wrong type, legacy string) maps to the default.
@@ -60,6 +69,23 @@
     };
   }
 
+  // Like clampedInt, but snapped to a fractional step grid rather than to whole
+  // numbers. The snap is measured from `min` so every reachable value sits on
+  // the same grid the stepper and the slider walk, and the result is rounded
+  // off the float dust a 0.1 grid produces (0.7 + 5 * 0.1 = 1.2000000000000002)
+  // — otherwise the same value written by two contexts would not compare equal
+  // and `diff` would report a change that never happened.
+  function clampedStep(min, max, step, fallback) {
+    return (v) => {
+      let n = NaN;
+      if (typeof v === 'number') n = v;
+      else if (typeof v === 'string' && v.trim() !== '') n = Number(v);
+      if (!Number.isFinite(n)) return fallback;
+      const clamped = Math.max(min, Math.min(max, n));
+      return Number((min + Math.round((clamped - min) / step) * step).toFixed(4));
+    };
+  }
+
   // Enabled translations are [{ id, name, abbr, provider, copyright }] rows
   // that came back from the provider; the only invariant we enforce is a
   // usable id, since that is what every lookup keys on.
@@ -85,6 +111,14 @@
     sidebarWidth: {
       def: SIDEBAR_WIDTH_DEFAULT,
       norm: clampedInt(SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX, SIDEBAR_WIDTH_DEFAULT),
+    },
+    // The reader's own text-size multiplier for the panel *body* (translation,
+    // citation list, talk reader). It multiplies the size theme.js mirrors from
+    // the site rather than replacing it, so the site's font-size slider and this
+    // setting compose instead of fighting. Panel chrome is not affected.
+    fontScale: {
+      def: FONT_SCALE_DEFAULT,
+      norm: clampedStep(FONT_SCALE_MIN, FONT_SCALE_MAX, FONT_SCALE_STEP, FONT_SCALE_DEFAULT),
     },
     // Open sources scrolled to the cited paragraph.
     scrollToSnippet: { def: true, norm: bool(true) },
@@ -314,6 +348,9 @@
     KEYS,
     SIDEBAR_WIDTH_MIN,
     SIDEBAR_WIDTH_MAX,
+    FONT_SCALE_MIN,
+    FONT_SCALE_MAX,
+    FONT_SCALE_STEP,
     defaults,
     normalize,
     diff,
