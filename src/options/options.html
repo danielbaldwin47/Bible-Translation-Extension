@@ -53,6 +53,18 @@
         <strong>By source</strong> lists each talk once, grouped by type — General Conference, then
         Journal of Discourses, then Teachings of Joseph Smith.
       </p>
+      <div class="row" id="citationMarkRow">
+        <label for="citationSourceMark">Source marking</label>
+        <select id="citationSourceMark">
+          <option value="chip">Acronym chip</option>
+          <option value="strip">Coloured edge</option>
+        </select>
+      </div>
+      <p class="hint">
+        <strong>Acronym chip</strong> tags each citation with its source (GC, JoD, JS).
+        <strong>Coloured edge</strong> drops the tag and marks the group with a coloured
+        rule instead, giving quoted text more room.
+      </p>
       <label class="check">
         <input type="checkbox" id="showCitationToggle" />
         <span>Show the layout toggle in the sidebar</span>
@@ -67,10 +79,19 @@
       <h2>Panel</h2>
       <div class="row" id="widthRow">
         <label for="sidebarWidth">Width</label>
-        <input type="range" id="sidebarWidth" min="280" max="900" step="10" />
+        <!-- min/max are set from __BTX.settings at init -->
+        <input type="range" id="sidebarWidth" step="10" />
         <output id="sidebarWidthOut">380px</output>
       </div>
       <p class="hint">You can also drag the panel's left edge to resize it.</p>
+      <label class="check">
+        <input type="checkbox" id="scrollSync" />
+        <span>Sync panel scrolling with the page</span>
+      </label>
+      <p class="hint">
+        On, the translation follows the chapter as you scroll (scroll the panel yourself and it
+        stays put until the page moves again). Off, scrolling the page never moves the panel.
+      </p>
       <label class="check">
         <input type="checkbox" id="actOnNonEngOnly" />
         <span>Only show the panel on English (<code>lang=eng</code>) pages</span>
@@ -85,6 +106,7 @@
 
   <!-- Shared modules first (plain scripts attach to window.__BTX), then page logic. -->
   <script src="../shared/constants.js"></script>
+  <script src="../shared/settings.js"></script>
   <script src="../shared/books.js"></script>
   <script src="options.js"></script>
 </body>

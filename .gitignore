@@ -7,3 +7,7 @@
 /source-data/
 /core.53.db
 /content.53.db
+
+# macOS Finder droppings, and the scratch worktrees agents work in.
+.DS_Store
+/.claude/worktrees/

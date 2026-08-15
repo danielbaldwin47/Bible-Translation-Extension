@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Translations & Citations for Gospel Library",
-  "version": "1.3.0",
+  "version": "0.1.0",
   "description": "Compare Bible translations and see which General Conference talks, Journal of Discourses sermons, and Joseph Smith teachings cite each verse — in a side panel that blends into the Gospel Library reader.",
   "permissions": ["storage"],
   "host_permissions": [
@@ -16,13 +16,16 @@
       "matches": ["https://www.churchofjesuschrist.org/study/*"],
       "js": [
         "src/shared/constants.js",
+        "src/shared/settings.js",
         "src/shared/books.js",
         "src/content/sanitize.js",
         "src/content/theme.js",
         "src/content/detect.js",
         "src/content/panel.js",
         "src/citations/cit-data.js",
+        "src/citations/cit-view-model.js",
         "src/citations/highlights.js",
+        "src/citations/talk-source.js",
         "src/citations/talk-view.js",
         "src/citations/cit-panel.js",
         "src/content/content.js"
