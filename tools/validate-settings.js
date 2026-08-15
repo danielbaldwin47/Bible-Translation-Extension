@@ -334,6 +334,21 @@ check(/PANEL_HANDLED_KEYS = \[[^\]]*'fontScale'/.test(panelSrc),
 check(/setProperty\('--btx-size-scale'/.test(panelSrc),
   'panel.js applies fontScale as --btx-size-scale');
 
+// The header's A− / A+ stepper edits the same setting the options slider does,
+// and it must go through the settings owner: a direct storage write would skip
+// normalization, lose the own-write tag (so the panel would re-apply its own
+// change) and leave an open options form showing a stale number.
+check(/function onFontStep\(dir\)[\s\S]{0,600}?persist\(\{ fontScale/.test(panelSrc),
+  'a text-size step persists through the settings module, not raw storage');
+check(/function onFontStep\(dir\)[\s\S]{0,600}?stepFontScale\(/.test(panelSrc),
+  'a step lands where the pure rule says it lands');
+// The bounds have one owner. A literal 0.7/1.6/0.1 here would be a second copy
+// of the clamp, free to drift from the schema's normalizer.
+check(/FONT_SCALE_MIN[\s\S]{0,200}FONT_SCALE_MAX[\s\S]{0,200}FONT_SCALE_STEP/.test(panelSrc),
+  'the panel reads the step grid from the settings module');
+check(/function applyFontStepUI\(\)[\s\S]{0,400}?disabled = stepFontScale\([\s\S]{0,200}?disabled = stepFontScale\(/.test(panelSrc),
+  'both stepper buttons take their disabled state from the same rule a click uses');
+
 // The multiplier is a second variable *beside* the size theme.js mirrors, so a
 // theme re-apply and a scale change can't overwrite one another (an apply that
 // writes nothing is what keeps the reading-column observer from looping).
@@ -350,6 +365,26 @@ for (const chip of ['btx-cit-count', 'btx-cit-range', 'btx-cit-tag']) {
   const rule = new RegExp(`\\.${chip} \\{[^}]*\\}`).exec(citCss);
   check(rule && !/--btx-size-scale/.test(rule[0]), `${chip} stays fixed-size chrome`);
 }
+// So is the stepper itself: buttons that resized with the setting they edit
+// would move the header's layout around under the reader's clicks.
+const stepRule = /#btx-root \.btx-font-step \{[^}]*\}/.exec(panelCss);
+check(stepRule && !/--btx-size-scale|--btx-body-size/.test(stepRule[0]),
+  'the text-size stepper stays fixed-size chrome');
+// Every header control on one row at the minimum panel width: nothing rigid,
+// so adding the stepper cannot push the row into a wrap or an overflow.
+const headerRule = /#btx-root \.btx-header \{[^}]*\}/.exec(panelCss);
+check(headerRule && /flex-wrap: nowrap/.test(headerRule[0]), 'the header never wraps');
+check(/#btx-root \.btx-title \{[^}]*min-width: 0/.test(panelCss),
+  'the title can shrink so the controls always fit');
+check(/#btx-root \.btx-select \{[^}]*min-width:/.test(panelCss),
+  'the translation select shrinks to a floor rather than overflowing the header');
+// The buttons themselves are rigid, so the control box's floor is its own
+// content. `min-width: 0` here would remove that floor and let the box shrink
+// *past* its buttons, spilling them off the panel's right edge instead of
+// stopping the layout.
+const controlsRule = /#btx-root \.btx-controls \{[^}]*\}/.exec(panelCss);
+check(controlsRule && !/min-width: 0/.test(controlsRule[0]),
+  'the header controls keep a min-content floor, so the buttons cannot spill out of the panel');
 const contentSrc = fs.readFileSync(path.join(ROOT, 'src/content/content.js'), 'utf8');
 check(/PANEL_KEYS = panel\.HANDLED_KEYS/.test(contentSrc),
   'content.js takes the panel-handled key list from the panel (no second copy)');

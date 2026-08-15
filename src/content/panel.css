@@ -96,10 +96,19 @@
 #btx-root.btx-resizing .btx-resize::before { background: var(--btx-accent); }
 #btx-root.btx-resizing { user-select: none; }
 
+/* The header holds the chapter title plus every control (translation select,
+   text-size stepper, gear, collapse, close) on one row. It must not wrap or
+   overflow at the minimum panel width (280px), so it yields in a fixed order:
+   the title first (it already ellipses), then the select, down to a width that
+   still shows a translation abbreviation. The buttons never shrink — a
+   half-width tap target is worse than a short title — and .btx-controls keeps
+   its default min-width (min-content) so the box can never shrink past them
+   and spill its buttons off the panel's right edge. */
 #btx-root .btx-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: nowrap;
   gap: 8px;
   padding: 6px 10px;
   min-height: var(--btx-header-h); /* line up with the site's sticky toolbar row */
@@ -114,15 +123,20 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;                 /* without this the title's text sets a floor */
 }
 
 #btx-root .btx-controls {
   display: flex;
   align-items: center;
+  flex: 0 1 auto;               /* min-width stays auto: the floor is its content */
   gap: 4px;
 }
 
 #btx-root .btx-select {
+  flex: 0 1 auto;
+  min-width: 64px;              /* still shows an abbreviation at 280px */
   max-width: 130px;
   font-family: inherit;
   font-size: 13px;
@@ -146,6 +160,7 @@
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
+  flex: 0 0 auto;               /* controls keep their tap target; the title yields */
   padding: 4px 6px;
   border-radius: 6px;
   transition: background 0.12s, color 0.12s;
@@ -153,6 +168,26 @@
 #btx-root .btx-btn:hover {
   color: var(--btx-fg);
   background: var(--btx-border);
+}
+
+/* The text-size stepper. Panel chrome, so fixed px like every other control —
+   it must not scale with the setting it edits, or the buttons would walk the
+   header's width around as they are clicked. The two glyphs are sized against
+   each other (A− smaller than A+) to say which way each one goes. */
+#btx-root .btx-font-step {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px;
+}
+#btx-root .btx-font-larger { font-size: 15px; }
+/* Spent end of the range: visibly out of moves rather than silently inert. */
+#btx-root .btx-font-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+#btx-root .btx-font-step:disabled:hover {
+  background: transparent;
+  color: var(--btx-muted);
 }
 
 /* Consistent keyboard-focus ring on every interactive control in the panel. */

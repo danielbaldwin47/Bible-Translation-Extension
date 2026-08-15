@@ -136,7 +136,7 @@ validators — go there before changing behaviour.
   `sidebarWidth`) has one owner in the reader, `__BTX.panel`, persisted via
   `__BTX.settings`. `panel.HANDLED_KEYS` lists what the panel handles itself
   (incl. read-only `scrollSync`, `citationSourceMark`, `showCitationToggle`,
-  `fontScale`);
+  and `fontScale`, which the header's stepper also writes);
   `content.js` reads that list — its subscriber skips changes touching only
   those keys, and the panel fires `renderMode` when an external write stales
   its content. The old `chrome.storage.local` `btxPanelMode`/`btxPanelCollapsed`
@@ -181,7 +181,12 @@ validators — go there before changing behaviour.
   toolbars, header and footer stay fixed px, and the citation list's designed
   size ladder scales off the multiplier alone, not off the site. Panel-handled,
   never a re-render; the clamp and step are `__BTX.settings`' normalizer
-  (`applyFontScale` calls `normalize`, it does not re-clamp).
+  (`applyFontScale` calls `normalize`, it does not re-clamp). Two editors: the
+  options slider and the header's A− / A+ stepper, which writes through
+  `persist` like every other panel setting. `stepFontScale` is one rule for
+  both jobs — where a click lands, and (`null` = nowhere) which button is
+  disabled. Every header control shrinks except the buttons, so the row still
+  fits at the 280px minimum width.
   `--btx-line` is **always a length** — `theme.lineHeightOf` states even
   `normal` in px — because multiplying a ratio would apply the scale twice.
 - **Citation source marking** (`citationSourceMark`: `strip` default | `chip`) is pure

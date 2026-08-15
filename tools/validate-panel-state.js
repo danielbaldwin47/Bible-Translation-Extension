@@ -483,6 +483,43 @@ check(P.revealTop({}) === 0, 'a placement with nothing to measure is the top');
 check(P.revealTop({ targetTop: -500, viewportH: VIEW, maxScroll: MAX }) === 0, 'a negative target clamps to the top');
 check(P.revealTop({ targetTop: 2000, viewportH: -10, maxScroll: MAX }) === 2000, 'a nonsense viewport leaves no gap rather than a negative one');
 
+// ---- The header's text-size stepper ----
+// One rule serves both jobs the A− / A+ buttons need: where a step lands, and
+// whether a button is spent. `null` means "this direction changes nothing" —
+// the caller disables that button and writes no setting, so a click at the end
+// of the range is not a storage write that normalizes back to the same number.
+// The grid comes from __BTX.settings (the owner of the clamp); this only walks
+// the bounds it is handed.
+console.log('stepFontScale:');
+const SCALE = { min: 0.7, max: 1.6, step: 0.1 };
+function step(scale, dir) { return P.stepFontScale(scale, dir, SCALE); }
+eq(step(1, 1), 1.1, 'a step up moves one grid notch');
+eq(step(1, -1), 0.9, 'a step down moves one grid notch');
+// 0.7 + 0.1 = 0.7999999999999999 in floats. An un-rounded result would not
+// compare equal to the same value written by the options slider, and every
+// step would look like a change to `diff`.
+eq(step(0.7, 1), 0.8, 'a step lands on a clean grid value, not float dust');
+eq(step(0.8, 1), 0.9, '...at every notch');
+eq(step(1.5, 1), 1.6, 'the last step reaches the maximum exactly');
+eq(step(1.6, 1), null, 'at the maximum there is nowhere up to go');
+eq(step(0.7, -1), null, 'at the minimum there is nowhere down to go');
+eq(step(1.55, 1), 1.6, 'a step that would overshoot clamps to the end instead');
+eq(step(0.75, -1), 0.7, '...at the low end too');
+eq(step(1, 0), null, 'a step of no direction is not a step');
+for (const bad of [null, undefined, NaN, 'big', {}]) {
+  eq(step(bad, 1), null, `a ${String(bad)} scale steps nowhere`);
+}
+// Walking the whole range from either end terminates on the grid — the
+// disabled state is reachable, and no notch is skipped.
+let walk = SCALE.min;
+let notches = 0;
+for (let next = step(walk, 1); next !== null; next = step(walk, 1)) {
+  walk = next;
+  if (++notches > 100) break;
+}
+eq(walk, SCALE.max, 'stepping up from the minimum ends at the maximum');
+eq(notches, Math.round((SCALE.max - SCALE.min) / SCALE.step), 'the walk hits every notch on the grid, once');
+
 // ---- Telling our own scroll from the user's ----
 // The panel must never fight the user for the body. Every write records where
 // it left the body; a 'scroll' event that doesn't match that is the user's, and
